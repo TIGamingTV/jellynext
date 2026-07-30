@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -27,35 +34,84 @@ jobs:
       - name: Extract version
         id: version
         run: |
+          set -euo pipefail
           VERSION=$(grep -oPm1 '(?<=<AssemblyVersion>)[^<]+' Jellyfin.Plugin.JellyNext/Jellyfin.Plugin.JellyNext.csproj)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read <AssemblyVersion> from Jellyfin.Plugin.JellyNext.csproj"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Plugin version: $VERSION"
 
       - name: Extract target ABI
         id: targetabi
         run: |
+          set -euo pipefail
           JELLYFIN_VERSION=$(grep -oPm1 '(?<=<PackageReference Include="Jellyfin.Controller" Version=")[^"]+' Jellyfin.Plugin.JellyNext/Jellyfin.Plugin.JellyNext.csproj)
+          if [ -z "$JELLYFIN_VERSION" ]; then
+            echo "::error::Could not read the Jellyfin.Controller package version"
+            exit 1
+          fi
           TARGET_ABI=$(echo "$JELLYFIN_VERSION" | sed 's/\.\*/.0/')
-          echo "targetabi=$TARGET_ABI" >> $GITHUB_OUTPUT
+          # Drop any prerelease suffix, then pad to the four components Jellyfin compares as a Version.
+          TARGET_ABI="${TARGET_ABI%%-*}"
+          while [ "$(echo "$TARGET_ABI" | awk -F. '{print NF}')" -lt 4 ]; do
+            TARGET_ABI="${TARGET_ABI}.0"
+          done
+          echo "targetabi=$TARGET_ABI" >> "$GITHUB_OUTPUT"
           echo "Target ABI: $TARGET_ABI"
 
-      - name: Package plugin
+      # A published version is immutable: re-releasing the same tag would swap the asset and
+      # invalidate the checksum already advertised to users. Fail early instead.
+      - name: Ensure the version is unreleased
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ steps.version.outputs.version }}
         run: |
-          cd Jellyfin.Plugin.JellyNext/bin/Release/net9.0
-          zip -r ../../../../jellynext-v${{ steps.version.outputs.version }}.zip *
-
-      - name: Extract changelog
-        id: changelog
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          CHANGELOG=$(sed -n "/## v${VERSION}/,/## v/p" CHANGELOG.md | sed '1!{/## v/d;}' | sed '1d')
-          if [ -z "$CHANGELOG" ]; then
-            echo "No changelog found for version ${VERSION}"
-            CHANGELOG="Release v${VERSION}"
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists. Bump <AssemblyVersion> and <FileVersion> in Jellyfin.Plugin.JellyNext/Jellyfin.Plugin.JellyNext.csproj, and add a matching '## v<version>' section to CHANGELOG.md, before releasing."
+            exit 1
           fi
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "$TAG has not been released yet."
+
+      - name: Package plugin
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd Jellyfin.Plugin.JellyNext/bin/Release/net9.0
+          zip -r "../../../../jellynext-v${VERSION}.zip" .
+
+      - name: Calculate checksum
+        id: checksum
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          CHECKSUM=$(md5sum "jellynext-v${VERSION}.zip" | awk '{print $1}')
+          echo "checksum=$CHECKSUM" >> "$GITHUB_OUTPUT"
+          echo "Checksum: $CHECKSUM"
+
+      # Written to a file rather than a step output. Release notes are arbitrary Markdown, and
+      # interpolating them into a shell command line would let backticks and $(...) execute.
+      - name: Extract changelog
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          VERSION_RE=$(printf '%s' "$VERSION" | sed 's/\./\\./g')
+          # Drop the heading, any trailing heading, and leading blank lines.
+          sed -n "/^## v${VERSION_RE}\$/,/^## v/p" CHANGELOG.md \
+            | sed '1d; /^## v/d' \
+            | sed '/./,$!d' > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::warning::No '## v${VERSION}' section in CHANGELOG.md; using a generic release note."
+            printf 'Release v%s\n' "$VERSION" > release-notes.md
+          fi
+          echo "--- release notes ---"
+          cat release-notes.md
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -64,33 +120,45 @@ jobs:
           path: jellynext-v${{ steps.version.outputs.version }}.zip
 
       - name: Create Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: Jellynext ${{ steps.version.outputs.version }}
-          body: ${{ steps.changelog.outputs.changelog }}
+          body_path: release-notes.md
           files: jellynext-v${{ steps.version.outputs.version }}.zip
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Calculate checksum
-        id: checksum
-        run: |
-          CHECKSUM=$(md5sum jellynext-v${{ steps.version.outputs.version }}.zip | awk '{print $1}')
-          echo "checksum=$CHECKSUM" >> $GITHUB_OUTPUT
-          echo "Checksum: $CHECKSUM"
+      # This repository is its own Jellyfin plugin repository: manifest.json is served straight from
+      # raw.githubusercontent.com. It can only be written after the release exists, because the
+      # checksum has to match the asset that was actually published.
+      - name: Update plugin manifest
+        if: github.ref == 'refs/heads/main'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TARGET_ABI: ${{ steps.targetabi.outputs.targetabi }}
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/jellynext-v${{ steps.version.outputs.version }}.zip
+          CHECKSUM: ${{ steps.checksum.outputs.checksum }}
+          CHANGELOG_FILE: release-notes.md
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: .github/scripts/update-manifest.sh
 
-      - name: Trigger plugin repository update
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Commit plugin manifest
+        if: github.ref == 'refs/heads/main'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          .github/scripts/trigger-plugin-update.sh \
-            "a4df60c5-6ab4-412a-8f79-2cab93fb2bc5" \
-            "${{ steps.checksum.outputs.checksum }}" \
-            "${{ steps.targetabi.outputs.targetabi }}" \
-            ${{ toJSON(steps.changelog.outputs.changelog) }} \
-            "https://github.com/luall0/jellynext/releases/download/v${{ steps.version.outputs.version }}/jellynext-v${{ steps.version.outputs.version }}.zip" \
-            "${{ steps.version.outputs.version }}" \
-            "${{ secrets.PAT_TOKEN }}"
+          set -euo pipefail
+          if git diff --quiet -- manifest.json; then
+            echo "manifest.json already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          # Commits authored by GITHUB_TOKEN do not start new workflow runs, so this cannot loop.
+          git commit -m "Publish v${VERSION} to the plugin manifest [skip ci]"
+          git push origin HEAD:main

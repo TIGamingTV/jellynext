@@ -128,11 +128,19 @@ Features:
 
 ### Install from Repository
 
+This repository is its own Jellyfin plugin repository — `manifest.json` at the root is served
+directly by raw.githubusercontent.com, and each release adds itself to it automatically.
+
 1. **Add Plugin Repository to Jellyfin**
    - Go to: **Dashboard → Plugins → Repositories**
    - Click **"+"** to add a new repository
-   - Enter repository URL: `https://raw.githubusercontent.com/luall0/jellyfin-luall0-plugins/refs/heads/main/manifest.json`
+   - Repository Name: `JellyNext`
+   - Enter repository URL: `https://raw.githubusercontent.com/TIGamingTV/jellynext/main/manifest.json`
    - Click **Save**
+
+   > Installing upstream releases instead? Use
+   > `https://raw.githubusercontent.com/luall0/jellyfin-luall0-plugins/refs/heads/main/manifest.json`.
+   > Do not add both — two repositories offering the same plugin GUID will conflict.
 
 2. **Install JellyNext Plugin**
    - Go to: **Dashboard → Plugins → Catalog**
@@ -545,7 +553,7 @@ If your client doesn't support automatic playback stop, this is a Jellyfin nativ
 
 ```bash
 # Clone the repository
-git clone https://github.com/luall0/jellynext.git
+git clone https://github.com/TIGamingTV/jellynext.git
 cd jellynext
 
 # Restore dependencies
@@ -559,6 +567,35 @@ dotnet build -c Release Jellyfin.Plugin.JellyNext/Jellyfin.Plugin.JellyNext.cspr
 
 # Output will be in: Jellyfin.Plugin.JellyNext/bin/Release/net9.0/
 ```
+
+### Releasing
+
+Releases are produced by `.github/workflows/build.yml`. Pull requests targeting `main` run a
+build-only validation pass; **pushing to `main` publishes**, so treat the merge as the release.
+
+To cut a release:
+
+1. Bump `<AssemblyVersion>` **and** `<FileVersion>` in `Jellyfin.Plugin.JellyNext.csproj`.
+2. Add a matching `## v<version>` section to `CHANGELOG.md`. The workflow extracts everything between
+   that heading and the next `## v` heading and uses it as the GitHub release body, so a missing or
+   mismatched heading yields a bare "Release v<version>" note.
+3. Merge to `main`.
+
+The workflow then:
+
+1. Builds the solution and packages `bin/Release/net9.0` as `jellynext-v<version>.zip`.
+2. Creates the GitHub release tagged `v<version>` with that asset. The version must not already be
+   released — it fails early rather than replacing an existing release's asset, which would
+   invalidate the checksum already advertised to users.
+3. Appends the version to `manifest.json` (newest first) with the asset's download URL and md5, and
+   commits that back to `main`. This is what makes the new version appear in Jellyfin's plugin
+   catalog for anyone who added the repository URL above.
+
+No tokens or secrets are needed — the built-in `GITHUB_TOKEN` covers all of it. The manifest step
+runs after the release because the checksum has to match the asset that was actually published, and
+it is idempotent, so re-running a release does not duplicate entries.
+
+`manifest.json` ships with an empty `versions` array; it fills in from the first release onward.
 
 ### Project Structure
 
