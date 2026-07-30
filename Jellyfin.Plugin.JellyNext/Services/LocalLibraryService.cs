@@ -78,6 +78,13 @@ public class LocalLibraryService
     /// </summary>
     /// <param name="series">The series.</param>
     /// <returns>Set of season numbers that exist locally.</returns>
+    /// <remarks>
+    /// <c>IsVirtualItem = false</c> is what keeps this answering "is it on disk". With "display missing
+    /// episodes" enabled, Jellyfin materialises a Season entity for every season the metadata provider
+    /// knows about, including ones that were never downloaded. Counting those made a season the user
+    /// does not have look present, so Next Seasons silently stopped suggesting it and the stub for it
+    /// was deleted as "already in the library".
+    /// </remarks>
     public HashSet<int> GetLocalSeasons(Series series)
     {
         var seasons = new HashSet<int>();
@@ -86,6 +93,7 @@ public class LocalLibraryService
         {
             ParentId = series.Id,
             IncludeItemTypes = new[] { BaseItemKind.Season },
+            IsVirtualItem = false,
             Recursive = false
         });
 

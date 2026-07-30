@@ -200,7 +200,7 @@ Progress is *set*, not merged with `Math.Max`: the snapshot is authoritative in 
 ### Per-User Architecture
 - Each user has own Trakt OAuth token (stored in `PluginConfiguration.TraktUsers[]`)
 - Per-user sync settings: `SyncMovieRecommendations`, `SyncShowRecommendations`, `SyncNextSeasons`, `SyncWatchlistMovies`, `SyncWatchlistShows`, `IgnoreCollected`, `IgnoreWatchlisted`, `LimitShowsToSeasonOne`, `NextSeasonsRecentOnly`, `NextSeasonsRecentDays`, `MovieRecommendationsLimit`, `ShowRecommendationsLimit`, `LastHistorySyncTimestamp` (all in `TraktUser` model)
-- Watchlist tracking: `ProcessedWatchlistMovieIds` (TMDB IDs), `ProcessedWatchlistShowIds` (TVDB IDs) - persisted to avoid re-adding same items
+- Watchlist tracking: in-memory per user in `WatchlistSyncService`, not persisted (see "Watchlist Sync" below)
 - Recommendation limits: User-configurable 1-100 (default: 50), validated with `Math.Clamp()` on save
 - Virtual libraries filtered by userId extracted from path
 - Access via `UserHelper.GetTraktUser(userGuid)`
@@ -280,15 +280,11 @@ Implement `IContentProvider` + register in `PluginServiceRegistrator` → automa
 - **Workflow**:
   1. Fetch movies via `TraktApi.GetMovieWatchlist()` and shows via `TraktApi.GetShowWatchlist()`
   2. Filter out items already in local library (`LocalLibraryService.DoesMovieExist()` / `FindSeriesByTvdbId()`)
-  3. Filter out items already processed (`ProcessedWatchlistMovieIds` / `ProcessedWatchlistShowIds` HashSets)
+  3. Filter out items already requested this session (`_requestedMovies` / `_requestedShows`)
   4. Trigger download via appropriate provider (`IDownloadProvider.RequestMovieAsync()` / `RequestShowAsync()`)
-  5. Add to processed IDs to prevent re-adding on subsequent syncs
-  6. Save configuration to persist processed IDs
 - **Show handling**: Adds Season 1 by default (Trakt watchlist doesn't specify specific seasons)
-- **State tracking**: 
-  - `ProcessedWatchlistMovieIds`: HashSet<int> of TMDB IDs (persisted in config)
-  - `ProcessedWatchlistShowIds`: HashSet<int> of TVDB IDs (persisted in config)
-  - Reset manually by removing IDs from config if you want to re-trigger downloads
+- **State tracking**: in-memory per user, **rebuilt from the current watchlist on every run** rather than accumulated. An item is recorded only when its request succeeds and only while it is still watchlisted, so removing a title from Trakt drops it and re-adding requests it again. The library check is the durable source of truth; this set only stops the sync re-sending items that are requested but not yet downloaded (previously once an hour, forever). A restart re-sends each such item once, which the download systems reject as duplicates
+  - `TraktUser.ProcessedWatchlist*Ids` used to hold this in config, but nothing ever read or wrote them - the fields were removed. Do not reintroduce persisted "processed" ids: they never expire, so removing and re-adding a watchlist entry would silently do nothing
 - **API endpoints**: Uses `/sync/watchlist/movies` and `/sync/watchlist/shows` with `extended=full` for genre metadata
 - **Throttling**: 1 second delay between downloads to avoid overwhelming download systems
 - **Error handling**: Individual item failures logged, don't stop entire sync process

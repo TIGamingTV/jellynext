@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -19,6 +20,13 @@ public class WatchlistSyncService
     private readonly TraktApi _traktApi;
     private readonly LocalLibraryService _localLibrary;
     private readonly DownloadProviderFactory _downloadProviderFactory;
+
+    // Items already requested, per user (TMDB ids for movies, TVDB ids for shows). Rebuilt from the
+    // current watchlist on every run rather than accumulated, so a title removed from Trakt drops out
+    // and adding it back requests it again. Without this the sync re-sent every watchlisted item that
+    // had not finished downloading, once an hour, for as long as it stayed on the watchlist.
+    private readonly ConcurrentDictionary<Guid, HashSet<int>> _requestedMovies = new();
+    private readonly ConcurrentDictionary<Guid, HashSet<int>> _requestedShows = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WatchlistSyncService"/> class.
@@ -118,9 +126,6 @@ public class WatchlistSyncService
                 addedShows = await SyncShowWatchlistAsync(traktUser, cancellationToken);
             }
 
-            // Save updated processed IDs
-            Plugin.Instance?.SaveConfiguration();
-
             _logger.LogInformation(
                 "Completed watchlist sync for user {UserId}: {AddedMovies} movies, {AddedShows} shows added",
                 userId,
@@ -162,6 +167,10 @@ public class WatchlistSyncService
             }
 
             var downloadProvider = _downloadProviderFactory.GetProvider();
+            var previouslyRequested = _requestedMovies.TryGetValue(traktUser.LinkedMbUserId, out var known)
+                ? known
+                : new HashSet<int>();
+            var stillRequested = new HashSet<int>();
 
             foreach (var movie in watchlistMovies)
             {
@@ -188,6 +197,14 @@ public class WatchlistSyncService
                         "Skipping movie {Title} ({Year}): Already in library",
                         movie.Title,
                         movie.Year);
+                    continue;
+                }
+
+                if (previouslyRequested.Contains(tmdbId))
+                {
+                    // Already sent to the download system and still downloading - re-sending it every
+                    // run would just collect duplicate-request errors.
+                    stillRequested.Add(tmdbId);
                     continue;
                 }
 
@@ -218,6 +235,7 @@ public class WatchlistSyncService
                         movie.Title,
                         movie.Year,
                         result.Message);
+                    stillRequested.Add(tmdbId);
                     addedCount++;
                 }
                 else
@@ -232,6 +250,10 @@ public class WatchlistSyncService
                 // Small delay to avoid overwhelming the download system
                 await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
             }
+
+            // Committed only after a complete pass, so a run that failed part way through does not
+            // record a half-built set and forget what it had already requested.
+            _requestedMovies[traktUser.LinkedMbUserId] = stillRequested;
         }
         catch (TraktAuthenticationException)
         {
@@ -268,6 +290,10 @@ public class WatchlistSyncService
             }
 
             var downloadProvider = _downloadProviderFactory.GetProvider();
+            var previouslyRequested = _requestedShows.TryGetValue(traktUser.LinkedMbUserId, out var known)
+                ? known
+                : new HashSet<int>();
+            var stillRequested = new HashSet<int>();
 
             foreach (var show in watchlistShows)
             {
@@ -295,6 +321,14 @@ public class WatchlistSyncService
                         "Skipping show {Title} ({Year}): Already in library",
                         show.Title,
                         show.Year);
+                    continue;
+                }
+
+                if (previouslyRequested.Contains(tvdbId))
+                {
+                    // Already sent to the download system and still downloading - re-sending it every
+                    // run would just collect duplicate-request errors.
+                    stillRequested.Add(tvdbId);
                     continue;
                 }
 
@@ -334,6 +368,7 @@ public class WatchlistSyncService
                         show.Title,
                         show.Year,
                         result.Message);
+                    stillRequested.Add(tvdbId);
                     addedCount++;
                 }
                 else
@@ -348,6 +383,10 @@ public class WatchlistSyncService
                 // Small delay to avoid overwhelming the download system
                 await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
             }
+
+            // Committed only after a complete pass, so a run that failed part way through does not
+            // record a half-built set and forget what it had already requested.
+            _requestedShows[traktUser.LinkedMbUserId] = stillRequested;
         }
         catch (TraktAuthenticationException)
         {
