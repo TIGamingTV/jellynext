@@ -235,6 +235,25 @@ public class PluginConfiguration : BasePluginConfiguration
     public int TrendingMoviesLimit { get; set; } = 50;
 
     /// <summary>
+    /// Gets or sets the OAuth application identity JellyNext presents to Trakt.
+    /// Defaults to <see cref="TraktAuthMode.Standalone"/> so existing installations keep working.
+    /// </summary>
+    public TraktAuthMode TraktAuthMode { get; set; } = TraktAuthMode.Standalone;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether JellyNext may refresh an expired token it borrowed
+    /// from the official Trakt plugin.
+    /// </summary>
+    /// <remarks>
+    /// Trakt refresh tokens are single use and rotate on every refresh, so only one owner may
+    /// refresh. When enabled, JellyNext refreshes and immediately writes the rotated pair back into
+    /// the official plugin's live configuration, keeping it the sole holder of valid tokens. When
+    /// disabled, JellyNext skips the sync cycle and waits for the official plugin to refresh on its
+    /// own. Only meaningful for <see cref="TraktAuthMode.SharedTraktPluginToken"/>.
+    /// </remarks>
+    public bool AllowSharedTokenRefresh { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets the array of per-user Trakt configurations.
     /// </summary>
     public TraktUser[] TraktUsers { get; set; } = Array.Empty<TraktUser>();

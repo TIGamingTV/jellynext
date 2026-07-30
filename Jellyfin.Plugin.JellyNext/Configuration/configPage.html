@@ -257,6 +257,9 @@
                     if (window.loadGeneralSettings) {
                         loadGeneralSettings(pluginConfig);
                     }
+                    if (window.loadTraktSettings) {
+                        loadTraktSettings(pluginConfig);
+                    }
                     if (window.loadTrendingSettings) {
                         loadTrendingSettings(pluginConfig);
                     }
@@ -281,6 +284,9 @@
                     // Save settings from each tab
                     if (window.saveGeneralSettings) {
                         saveGeneralSettings(config);
+                    }
+                    if (window.saveTraktSettings) {
+                        saveTraktSettings(config);
                     }
                     if (window.saveTrendingSettings) {
                         saveTrendingSettings(config);

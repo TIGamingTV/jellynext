@@ -127,6 +127,13 @@ public class WatchlistSyncService
                 addedMovies,
                 addedShows);
         }
+        catch (TraktAuthenticationException ex)
+        {
+            _logger.LogWarning(
+                "Skipping watchlist sync for user {UserId}: {Reason}",
+                userId,
+                ex.Message);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error syncing watchlist for user {UserId}", userId);
@@ -225,6 +232,11 @@ public class WatchlistSyncService
                 // Small delay to avoid overwhelming the download system
                 await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
             }
+        }
+        catch (TraktAuthenticationException)
+        {
+            // Surface auth failures so the caller skips the cycle instead of caching an empty result.
+            throw;
         }
         catch (Exception ex)
         {
@@ -336,6 +348,11 @@ public class WatchlistSyncService
                 // Small delay to avoid overwhelming the download system
                 await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
             }
+        }
+        catch (TraktAuthenticationException)
+        {
+            // Surface auth failures so the caller skips the cycle instead of caching an empty result.
+            throw;
         }
         catch (Exception ex)
         {

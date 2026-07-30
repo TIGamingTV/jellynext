@@ -20,6 +20,7 @@ public class RecommendationsProvider : IContentProvider
     private readonly ILogger<RecommendationsProvider> _logger;
     private readonly TraktApi _traktApi;
     private readonly ShowsCacheService _showsCache;
+    private readonly TraktPluginBridge _traktPluginBridge;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RecommendationsProvider"/> class.
@@ -27,14 +28,17 @@ public class RecommendationsProvider : IContentProvider
     /// <param name="logger">The logger.</param>
     /// <param name="traktApi">The Trakt API service.</param>
     /// <param name="showsCache">The shows cache service.</param>
+    /// <param name="traktPluginBridge">Bridge to the official Trakt plugin's stored tokens.</param>
     public RecommendationsProvider(
         ILogger<RecommendationsProvider> logger,
         TraktApi traktApi,
-        ShowsCacheService showsCache)
+        ShowsCacheService showsCache,
+        TraktPluginBridge traktPluginBridge)
     {
         _logger = logger;
         _traktApi = traktApi;
         _showsCache = showsCache;
+        _traktPluginBridge = traktPluginBridge;
     }
 
     /// <inheritdoc />
@@ -47,12 +51,12 @@ public class RecommendationsProvider : IContentProvider
     public bool IsEnabledForUser(Guid userId)
     {
         var traktUser = UserHelper.GetTraktUser(userId);
-        if (traktUser == null || string.IsNullOrWhiteSpace(traktUser.AccessToken))
+        if (!_traktPluginBridge.HasUsableToken(traktUser))
         {
             return false;
         }
 
-        return traktUser.SyncMovieRecommendations || traktUser.SyncShowRecommendations;
+        return traktUser!.SyncMovieRecommendations || traktUser.SyncShowRecommendations;
     }
 
     /// <inheritdoc />
@@ -86,6 +90,11 @@ public class RecommendationsProvider : IContentProvider
                 movieCount,
                 showCount,
                 userId);
+        }
+        catch (TraktAuthenticationException)
+        {
+            // Surface auth failures so the caller skips the cycle instead of caching an empty result.
+            throw;
         }
         catch (Exception ex)
         {
@@ -213,6 +222,11 @@ public class RecommendationsProvider : IContentProvider
             // We don't cache here to avoid redundant caching logic
 
             return airedSeasonCount;
+        }
+        catch (TraktAuthenticationException)
+        {
+            // Surface auth failures so the caller skips the cycle instead of caching an empty result.
+            throw;
         }
         catch (Exception ex)
         {

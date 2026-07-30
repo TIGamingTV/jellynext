@@ -16,18 +16,22 @@ public class TrendingMoviesProvider : IContentProvider
 {
     private readonly ILogger<TrendingMoviesProvider> _logger;
     private readonly TraktApi _traktApi;
+    private readonly TraktPluginBridge _traktPluginBridge;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TrendingMoviesProvider"/> class.
     /// </summary>
     /// <param name="logger">The logger.</param>
     /// <param name="traktApi">The Trakt API service.</param>
+    /// <param name="traktPluginBridge">Bridge to the official Trakt plugin's stored tokens.</param>
     public TrendingMoviesProvider(
         ILogger<TrendingMoviesProvider> logger,
-        TraktApi traktApi)
+        TraktApi traktApi,
+        TraktPluginBridge traktPluginBridge)
     {
         _logger = logger;
         _traktApi = traktApi;
+        _traktPluginBridge = traktPluginBridge;
     }
 
     /// <inheritdoc />
@@ -68,7 +72,7 @@ public class TrendingMoviesProvider : IContentProvider
         }
 
         var traktUser = UserHelper.GetTraktUser(trendingUserId);
-        if (traktUser == null || string.IsNullOrWhiteSpace(traktUser.AccessToken))
+        if (traktUser == null || !_traktPluginBridge.HasUsableToken(traktUser))
         {
             _logger.LogWarning(
                 "Trending movies enabled but user {UserId} has no valid Trakt authentication",
@@ -101,6 +105,11 @@ public class TrendingMoviesProvider : IContentProvider
             _logger.LogInformation(
                 "Fetched {Count} trending movies",
                 contentItems.Count);
+        }
+        catch (TraktAuthenticationException)
+        {
+            // Surface auth failures so the caller skips the cycle instead of caching an empty result.
+            throw;
         }
         catch (Exception ex)
         {

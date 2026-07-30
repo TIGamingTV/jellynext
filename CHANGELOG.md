@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.4.0.0
+
+### Features
+
+- **Shared Trakt Connection**: Work around Trakt's free-tier limit of one connected community app per account
+  - New `TraktAuthMode` setting with three modes: `Standalone` (default, unchanged behaviour), `SharedTraktPluginToken`, and `SharedClientId`
+  - `SharedTraktPluginToken` reads the per-user access token held by the official Jellyfin Trakt plugin and presents that plugin's client ID, so Trakt only ever sees one connected app with one token
+  - `SharedClientId` presents the official plugin's client ID while JellyNext authorizes its own token (experimental — Trakt's behaviour when the same client ID is authorized twice is unverified)
+  - New `TraktPluginBridge` service reads and writes the official plugin's live in-memory configuration by reflection, matched on `LinkedMbUserId`. Jellyfin loads each plugin into its own `AssemblyLoadContext`, so reflection (not an assembly reference) is required; the plugin is located through `IPluginManager` and reached via the shared `IHasPluginConfiguration` abstraction
+  - New `POST /JellyNext/Trakt/Users/{userGuid}/Link` registers a user for shared-token mode without a device authorization flow, and `GET /JellyNext/Trakt/SharedStatus` reports whether the Trakt plugin is present and which users it has linked
+  - Configuration UI: authorization mode selector, Trakt plugin detection status, and mode-appropriate linking controls
+
+- **Shared Token Refresh**: `AllowSharedTokenRefresh` (default enabled) lets JellyNext refresh a borrowed token and write the rotated pair back into the official plugin's live configuration
+  - Trakt refresh tokens are single-use and rotate on every refresh, so the refresh is skipped entirely unless the rotated pair can be written back — otherwise JellyNext would consume the refresh token and leave the official plugin holding a dead one
+  - Guarded by a per-user lock so parallel providers cannot refresh concurrently
+  - Never writes `Trakt.xml` directly; the file would be overwritten by the official plugin's next save
+
+### Improvements
+
+- **Auth Failure Handling**: New `TraktAuthenticationException` distinguishes "cannot authenticate" from "no content"
+  - `ContentSyncService` now skips the provider's cycle and leaves cached content intact instead of overwriting it with an empty result, which previously tore down a user's virtual library on a transient token problem
+  - Trakt 401 responses are detected explicitly and never trigger a re-authorization attempt in shared mode
+  - `WatchlistSyncService` logs auth failures as skipped cycles rather than errors
+
+- **Provider Gating**: `IsEnabledForUser` now checks for a usable token under the active authorization mode rather than only JellyNext's own stored token
+
 ## v1.3.0.0
 
 ### Features

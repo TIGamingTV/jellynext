@@ -82,6 +82,11 @@ public class ShowsCacheService
                     UpdateUserWatchProgress(traktUser.LinkedMbUserId, tvdbId, highestWatchedSeason.Value);
                 }
             }
+            catch (TraktAuthenticationException)
+            {
+                // Surface auth failures so the caller skips the cycle instead of caching an empty result.
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(
@@ -149,6 +154,11 @@ public class ShowsCacheService
                 {
                     UpdateUserWatchProgress(traktUser.LinkedMbUserId, tvdbId, data.HighestSeason);
                 }
+            }
+            catch (TraktAuthenticationException)
+            {
+                // Surface auth failures so the caller skips the cycle instead of caching an empty result.
+                throw;
             }
             catch (Exception ex)
             {

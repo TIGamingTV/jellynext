@@ -18,6 +18,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     {
         // Core services
         serviceCollection.AddHttpClient();
+        serviceCollection.AddSingleton<TraktPluginBridge>();
         serviceCollection.AddSingleton<TraktApi>();
         serviceCollection.AddSingleton<ContentCacheService>();
         serviceCollection.AddSingleton<ShowsCacheService>();
