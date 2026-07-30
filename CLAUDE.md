@@ -192,8 +192,10 @@ Background: Plugin.PollingTasks[userGuid] = TraktApi.PollForTokenAsync()
 - **Always paginate.** A request without pagination parameters returns page 1 only, capped at 100 items - previously this silently truncated large libraries. `extended=progress` is capped at 100/page. Trust `X-Pagination-Page-Count` over the requested limit.
 - **Failure was totally silent**: 200 responses, no `seasons` key, empty watch progress, "sync completed successfully" with 0 items. Prefer explicit assertions over trusting response shape.
 
-### Full Sync Must Not Poison the Incremental Path
-`ShowsCacheService.PerformFullSync` only advances `_userLastSyncTimestamp` when it actually established watch progress. A full sync that returned shows but no progress leaves the timestamp unset so the next run retries a full sync. Advancing it unconditionally sent every later run down the incremental path (`/sync/history/shows`, which only sees *newly* watched episodes), so the gap never closed and recovery needed a Jellyfin restart to clear the in-memory timestamp.
+### Watch Progress Comes From the Watched Snapshot, Not a History Delta
+`ShowsCacheService.SyncWatchedShows` reads progress from `/sync/watched/shows` on every run. The previous design synced incrementally from `/sync/history/shows` between two timestamps, which only matches episodes whose `watched_at` lands inside the window - marking a whole season watched records it against the original *air dates*, so the delta came back empty and progress stayed pinned to the season the user had before. Because the timestamp was in-memory, only a Jellyfin restart recovered. The snapshot is one request per 100 shows; the expensive per-show `GetShowSeasons` call is still only made for shows that are uncached or whose progress moved, so steady-state cost is unchanged. `TraktApi.GetShowWatchHistory` remains but is deliberately no longer on the sync path - do not reintroduce it as the source of progress.
+
+Progress is *set*, not merged with `Math.Max`: the snapshot is authoritative in both directions, and keeping the higher value pinned a show to a season the user had unmarked. A degraded response (no `seasons` array) yields a null highest-season and is skipped rather than written, so progress is never wiped.
 
 ### Per-User Architecture
 - Each user has own Trakt OAuth token (stored in `PluginConfiguration.TraktUsers[]`)
@@ -262,7 +264,7 @@ Implement `IContentProvider` + register in `PluginServiceRegistrator` → automa
 - Only suggests **immediate next season** (not all missing seasons)
 - Filters: aired episodes > 0, not in local library (via TVDB ID matching)
 - Creates ONE stub per show (not seasons 1-10 like recommendations)
-- **Sync-first approach**: Calls `ShowsCacheService.PerformIncrementalSync()` before fetching content (automatically handles full vs incremental)
+- **Sync-first approach**: Calls `ShowsCacheService.SyncWatchedShows()` before fetching content (refreshes watch progress from Trakt's watched snapshot)
 - **Cache-only reads**: Retrieves watched progress + season metadata entirely from ShowsCacheService (no duplicate API calls)
 - **Dynamic fetching**: If next season not in cache for ongoing shows, fetches latest from Trakt API via `GetShowSeasons()` and checks season count
 - **Library deduplication**: Uses LocalLibraryService to exclude shows already in Jellyfin library (TVDB ID matching)
@@ -300,15 +302,11 @@ Implement `IContentProvider` + register in `PluginServiceRegistrator` → automa
 - **Data models**:
   - `ShowCacheEntry`: Title, Year, IDs (TMDB/IMDB/TVDB/Trakt), Status, Genres, Seasons dictionary, CachedAt
   - `SeasonMetadata`: SeasonNumber, EpisodeCount, AiredEpisodes, FirstAired, CachedAt, IsComplete property
-- **Sync strategy**:
-  - **First run**: Full sync via `/sync/watched/shows?extended=full` → cache all shows + seasons + set watch progress
-  - **Subsequent runs**: Incremental sync via `/sync/history/shows?start_at={timestamp}&end_at={timestamp}` → update only changed shows
-  - **Pagination**: `GetShowWatchHistory` auto-fetches all pages (100 items/page, X-Pagination-Page-Count header)
+- **Sync strategy**: every run reads `/sync/watched/shows?extended=full,progress` (paginated, 100/page) and sets watch progress from it. `GetShowSeasons` is called only for shows that are uncached or whose progress moved, which keeps the per-show cost off the steady state without making progress depend on a time window - see "Watch Progress Comes From the Watched Snapshot" above
 - **Caching logic**:
   - **Ended/canceled shows**: Cache all seasons immediately (won't change)
-  - **Ongoing shows**: Only cache complete seasons where `episode_count == aired_episodes`, update incomplete seasons if already cached
-- **Timestamp management**: In-memory only (reset on restart → triggers full sync), set to `UtcNow - 1 minute` after each sync
-- **Progressive discovery**: As user watches episodes, incremental sync detects progression → updates watch progress → triggers next season recommendations
+  - **Ongoing shows**: Only cache complete seasons where `episode_count == aired_episodes`, update incomplete seasons if already cached. A season currently airing is therefore usually absent from the cache; `NextSeasonsProvider` fetches it from Trakt on demand, which is how newly premiered seasons are discovered
+- **Progressive discovery**: As the user watches, the next snapshot reports the higher season → progress updates → next season is suggested
 - **API efficiency**: NextSeasonsProvider + RecommendationsProvider read from cache only (zero duplicate Trakt API calls during content fetch)
 
 ### Jellyfin 10.11 API Changes

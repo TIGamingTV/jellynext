@@ -152,13 +152,12 @@ public class NextSeasonsProvider : IContentProvider
     }
 
     /// <summary>
-    /// Syncs watched shows (automatically performs full or incremental sync based on cache state).
+    /// Refreshes watch progress and season metadata before content is read from the cache.
     /// </summary>
     /// <param name="traktUser">The Trakt user configuration.</param>
     private async Task SyncWatchedShows(TraktUser traktUser)
     {
-        // ShowsCacheService handles full vs incremental logic internally
-        await _showsCache.PerformIncrementalSync(traktUser);
+        await _showsCache.SyncWatchedShows(traktUser);
     }
 
     /// <summary>

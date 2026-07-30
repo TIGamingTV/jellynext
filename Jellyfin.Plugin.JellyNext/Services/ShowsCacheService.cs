@@ -10,8 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.JellyNext.Services;
 
 /// <summary>
-/// Service for caching TV shows with season-level metadata.
-/// Supports both full sync (first run) and incremental sync (subsequent runs).
+/// Service for caching TV shows with season-level metadata and per-user watch progress.
 /// </summary>
 public class ShowsCacheService
 {
@@ -24,9 +23,6 @@ public class ShowsCacheService
     // Per-user watch progress: userId -> (tvdbId -> highest watched season)
     private readonly ConcurrentDictionary<Guid, ConcurrentDictionary<int, int>> _userWatchProgress;
 
-    // Per-user last sync timestamp: userId -> timestamp (in-memory only, not persisted)
-    private readonly ConcurrentDictionary<Guid, DateTime> _userLastSyncTimestamp;
-
     /// <summary>
     /// Initializes a new instance of the <see cref="ShowsCacheService"/> class.
     /// </summary>
@@ -38,7 +34,6 @@ public class ShowsCacheService
         _traktApi = traktApi;
         _showsCache = new ConcurrentDictionary<int, ShowCacheEntry>();
         _userWatchProgress = new ConcurrentDictionary<Guid, ConcurrentDictionary<int, int>>();
-        _userLastSyncTimestamp = new ConcurrentDictionary<Guid, DateTime>();
     }
 
     /// <summary>
@@ -50,18 +45,32 @@ public class ShowsCacheService
     }
 
     /// <summary>
-    /// Performs initial full sync for a user, caching all watched shows and their seasons.
+    /// Syncs a user's watched shows, refreshing watch progress and caching season metadata.
     /// </summary>
     /// <param name="traktUser">The Trakt user configuration.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    public async Task PerformFullSync(TraktUser traktUser)
+    /// <remarks>
+    /// Progress comes from <c>/sync/watched/shows</c>, which is the authoritative snapshot of what the
+    /// user has watched, rather than from a history delta. A delta only sees episodes whose
+    /// <c>watched_at</c> falls inside the polled window, so marking a whole season watched - which
+    /// Trakt records against the original air dates - produced no history at all and left progress
+    /// stuck at the season the user had before. Next Seasons then kept pointing at a season they had
+    /// already finished, and only a Jellyfin restart (which clears the in-memory sync state) recovered.
+    /// The snapshot costs one request per 100 shows; the per-show season lookup is the expensive part,
+    /// so it is only paid for shows the cache has never seen or whose progress actually moved.
+    /// </remarks>
+    public async Task SyncWatchedShows(TraktUser traktUser)
     {
-        _logger.LogInformation("Performing full sync for user {UserId}", traktUser.LinkedMbUserId);
+        _logger.LogInformation("Syncing watched shows for user {UserId}", traktUser.LinkedMbUserId);
 
         var watchedShows = await _traktApi.GetWatchedShows(traktUser);
         _logger.LogInformation("Found {Count} watched shows for user {UserId}", watchedShows.Length, traktUser.LinkedMbUserId);
 
         WarnOnDegradedWatchedShows(watchedShows);
+
+        var userProgress = GetUserWatchProgress(traktUser.LinkedMbUserId);
+        var progressChanges = 0;
+        var seasonsFetched = 0;
 
         foreach (var watchedShow in watchedShows)
         {
@@ -74,14 +83,28 @@ public class ShowsCacheService
 
             try
             {
-                // Cache show metadata/seasons (global)
-                await CacheShowWithSeasons(watchedShow.Show, traktUser);
-
-                // Update user watch progress (per-user)
                 var highestWatchedSeason = GetHighestWatchedSeason(watchedShow);
+                var knownSeason = userProgress.TryGetValue(tvdbId, out var known) ? known : (int?)null;
+                var progressMoved = highestWatchedSeason.HasValue && highestWatchedSeason != knownSeason;
+
+                if (progressMoved || !_showsCache.ContainsKey(tvdbId))
+                {
+                    await CacheShowWithSeasons(watchedShow.Show, traktUser);
+                    seasonsFetched++;
+                }
+
                 if (highestWatchedSeason.HasValue)
                 {
-                    UpdateUserWatchProgress(traktUser.LinkedMbUserId, tvdbId, highestWatchedSeason.Value);
+                    SetUserWatchProgress(traktUser.LinkedMbUserId, tvdbId, highestWatchedSeason.Value);
+                    if (progressMoved)
+                    {
+                        progressChanges++;
+                        _logger.LogInformation(
+                            "Watch progress for {Title}: {Previous} -> S{Current}",
+                            watchedShow.Show.Title,
+                            knownSeason.HasValue ? $"S{knownSeason.Value}" : "not tracked",
+                            highestWatchedSeason.Value);
+                    }
                 }
             }
             catch (TraktAuthenticationException)
@@ -99,28 +122,25 @@ public class ShowsCacheService
             }
         }
 
-        var userProgress = GetUserWatchProgress(traktUser.LinkedMbUserId);
-
-        // A full sync that returned shows but no progress at all has not established a baseline.
-        // Advancing the timestamp anyway would send every later run down the incremental path, which
-        // only sees newly watched episodes, so the gap would never be filled and recovery would need
-        // a Jellyfin restart to clear this in-memory timestamp. Leave it unset and retry a full sync.
         if (watchedShows.Length > 0 && userProgress.IsEmpty)
         {
             _logger.LogWarning(
                 "Fetched {Count} watched shows for user {UserId} but none carried season progress, so "
                 + "Next Seasons will be empty. Trakt only returns season progress for "
                 + "'/sync/watched/shows?extended=progress'; if this persists, the response shape has "
-                + "changed again. Retrying a full sync on the next run",
+                + "changed again",
                 watchedShows.Length,
                 traktUser.LinkedMbUserId);
             return;
         }
 
-        // Set last sync timestamp to now - 1 minute for next incremental sync (in-memory only)
-        _userLastSyncTimestamp[traktUser.LinkedMbUserId] = DateTime.UtcNow.AddMinutes(-1);
-
-        _logger.LogInformation("Full sync completed for user {UserId}, cached {Count} shows with watch progress", traktUser.LinkedMbUserId, userProgress.Count);
+        _logger.LogInformation(
+            "Sync completed for user {UserId}: {Tracked} shows tracked, {Changes} with changed progress, "
+            + "{Fetched} season lookups",
+            traktUser.LinkedMbUserId,
+            userProgress.Count,
+            progressChanges,
+            seasonsFetched);
     }
 
     /// <summary>
@@ -158,78 +178,6 @@ public class ShowsCacheService
                 + "'extended=full,progress' may no longer return the full show object",
                 watchedShows.Length);
         }
-    }
-
-    /// <summary>
-    /// Performs incremental sync using watch history since last sync.
-    /// </summary>
-    /// <param name="traktUser">The Trakt user configuration.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
-    public async Task PerformIncrementalSync(TraktUser traktUser)
-    {
-        if (!_userLastSyncTimestamp.TryGetValue(traktUser.LinkedMbUserId, out var lastSyncTimestamp))
-        {
-            _logger.LogInformation("No last sync timestamp, performing full sync instead");
-            await PerformFullSync(traktUser);
-            return;
-        }
-
-        var startAt = lastSyncTimestamp;
-        var endAt = DateTime.UtcNow.AddMinutes(-1);
-
-        _logger.LogInformation(
-            "Performing incremental sync for user {UserId} from {StartAt} to {EndAt}",
-            traktUser.LinkedMbUserId,
-            startAt,
-            endAt);
-
-        var historyItems = await _traktApi.GetShowWatchHistory(traktUser, startAt, endAt);
-        _logger.LogInformation("Found {Count} history items for user {UserId}", historyItems.Length, traktUser.LinkedMbUserId);
-
-        // Group by show to get highest watched season from history
-        var showsToUpdate = historyItems
-            .Where(h => h.Show.Ids.Tvdb.HasValue && h.Show.Ids.Tvdb.Value > 0 && h.Episode != null)
-            .GroupBy(h => h.Show.Ids.Tvdb!.Value)
-            .ToDictionary(
-                g => g.Key,
-                g => new
-                {
-                    Show = g.First().Show,
-                    HighestSeason = g.Max(item => item.Episode?.Season ?? 0)
-                });
-
-        foreach (var (tvdbId, data) in showsToUpdate)
-        {
-            try
-            {
-                // Cache show metadata/seasons (global)
-                await CacheShowWithSeasons(data.Show, traktUser);
-
-                // Update user watch progress (per-user)
-                if (data.HighestSeason > 0)
-                {
-                    UpdateUserWatchProgress(traktUser.LinkedMbUserId, tvdbId, data.HighestSeason);
-                }
-            }
-            catch (TraktAuthenticationException)
-            {
-                // Surface auth failures so the caller skips the cycle instead of caching an empty result.
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(
-                    ex,
-                    "Failed to update cache for show {Title} (TVDB: {TvdbId})",
-                    data.Show.Title,
-                    tvdbId);
-            }
-        }
-
-        // Update last sync timestamp (in-memory only)
-        _userLastSyncTimestamp[traktUser.LinkedMbUserId] = endAt;
-
-        _logger.LogInformation("Incremental sync completed for user {UserId}, updated {Count} shows", traktUser.LinkedMbUserId, showsToUpdate.Count);
     }
 
     /// <summary>
@@ -328,15 +276,21 @@ public class ShowsCacheService
     }
 
     /// <summary>
-    /// Updates or sets the user's watch progress for a show.
+    /// Sets the user's watch progress for a show.
     /// </summary>
     /// <param name="userId">The user ID.</param>
     /// <param name="tvdbId">The TVDB ID.</param>
     /// <param name="highestWatchedSeason">The highest season watched.</param>
-    public void UpdateUserWatchProgress(Guid userId, int tvdbId, int highestWatchedSeason)
+    /// <remarks>
+    /// The value replaces whatever was held rather than being merged with it. Progress now comes from
+    /// Trakt's watched snapshot, so it is authoritative in both directions - keeping the higher of the
+    /// two would pin a show to a season the user has since unmarked, and Next Seasons would keep asking
+    /// for a season past it.
+    /// </remarks>
+    public void SetUserWatchProgress(Guid userId, int tvdbId, int highestWatchedSeason)
     {
         var userProgress = GetUserWatchProgress(userId);
-        userProgress.AddOrUpdate(tvdbId, highestWatchedSeason, (_, existing) => Math.Max(existing, highestWatchedSeason));
+        userProgress[tvdbId] = highestWatchedSeason;
     }
 
     /// <summary>
