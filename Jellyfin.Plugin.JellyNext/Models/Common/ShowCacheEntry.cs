@@ -54,7 +54,8 @@ public class ShowCacheEntry
     public Dictionary<int, SeasonMetadata> Seasons { get; set; } = new Dictionary<int, SeasonMetadata>();
 
     /// <summary>
-    /// Gets or sets when this show was first cached.
+    /// Gets or sets when this show's metadata and seasons were last read from Trakt.
+    /// Drives the staleness check that re-reads shows whose watch progress never moves.
     /// </summary>
     public DateTime CachedAt { get; set; }
 

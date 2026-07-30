@@ -222,10 +222,10 @@ public class NextSeasonsProvider : IContentProvider
             }
         }
 
-        // If season not found (even after fetch), return null
+        // An ended show caches every season it has, so a missing one means the user has finished it.
         if (cachedSeason == null)
         {
-            return (null, "next season not in cache for an ended show");
+            return (null, "show is finished, no further season");
         }
 
         // Check if season has aired

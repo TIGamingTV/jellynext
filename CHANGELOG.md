@@ -11,6 +11,19 @@
   - Progress is also set rather than merged with the previous value, so unmarking a season no longer pins a show to a season it is past
   - Each show whose progress changes is logged (`Watch progress for X: S2 -> S4`), and the run reports how many shows are tracked, how many moved, and how many season lookups it made
 
+- **Seasons you do not have counted as downloaded**: `GetLocalSeasons` accepted Jellyfin's placeholder Season entities
+  - With "display missing episodes" enabled, Jellyfin materialises a Season for every season the metadata knows about, not just the ones on disk. Those placeholders made `DoesSeasonExist` return true for a season that was never downloaded, so Next Seasons skipped it as "already in the Jellyfin library" and removed its stub
+  - The query now filters on `IsVirtualItem = false`, so only seasons actually present count
+
+- **Watchlist items were re-requested every hour**: nothing tracked what had already been sent
+  - `ProcessedWatchlistMovieIds` and `ProcessedWatchlistShowIds` were declared on `TraktUser` and documented as the deduplication mechanism, but no code ever read or wrote them. Every watchlisted item that had not finished downloading was re-sent to Radarr/Sonarr/Jellyseerr on every run, producing duplicate-request errors in the log
+  - `WatchlistSyncService` now tracks requested items in memory per user, rebuilt from the current watchlist each run. Removing a title from Trakt drops it from the set, so adding it back requests it again - which a persisted "processed" list would have silently swallowed
+  - The dead configuration fields were removed, along with a `SaveConfiguration()` call that existed only to persist them (token refreshes save themselves)
+
+- **Ended shows were never re-read from Trakt**: a revival season stayed invisible for as long as Jellyfin kept running
+  - `NextSeasonsProvider` only queries Trakt on demand for shows that have not ended, and the sync only refetched seasons when watch progress moved, so a show cached as ended was frozen until a restart dropped the in-memory cache
+  - Season metadata is now re-read when it is older than 7 days even if nothing else changed, which also refreshes the show's status so a returning show starts caching its incomplete seasons again
+
 ### Improvements
 
 - **Next Seasons reports why shows produced nothing**: an empty library previously gave no explanation at the default log level, since every skip was a debug-only message
