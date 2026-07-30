@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.5.1.0
+
+### Bug Fixes
+
+- **Watch progress never picked up seasons marked watched on Trakt**: Next Seasons kept suggesting a season the user had already finished, or nothing at all
+  - After the first run, progress was only advanced from `/sync/history/shows` between the last sync and now. That window only matches episodes whose `watched_at` falls inside it, and marking a whole season watched records it against the original air dates, so the history came back empty and progress stayed where it was ("Found 0 history items", "0 next season recommendations")
+  - The in-memory sync timestamp meant the only way out was restarting Jellyfin, which forced a full sync
+  - Progress is now read from `/sync/watched/shows`, Trakt's authoritative snapshot, on every run. The per-show season lookup - the expensive part - is still only paid for shows the cache has not seen or whose progress moved, so the steady-state request count is unchanged
+  - Progress is also set rather than merged with the previous value, so unmarking a season no longer pins a show to a season it is past
+  - Each show whose progress changes is logged (`Watch progress for X: S2 -> S4`), and the run reports how many shows are tracked, how many moved, and how many season lookups it made
+
+### Improvements
+
+- **Next Seasons reports why shows produced nothing**: an empty library previously gave no explanation at the default log level, since every skip was a debug-only message
+  - The run summary now counts each outcome — no aired next season, hidden by the new-release filter, already in the Jellyfin library — instead of only reporting how many suggestions were found
+  - When the new-release filter hides seasons, up to ten are named with their premiere date and the active window, which distinguishes "correctly filtered old backlog" from a window that is too narrow or metadata Trakt did not return
+
 ## v1.5.0.0
 
 ### Features
