@@ -102,7 +102,10 @@ jobs:
         run: |
           set -euo pipefail
           VERSION_RE=$(printf '%s' "$VERSION" | sed 's/\./\\./g')
-          sed -n "/^## v${VERSION_RE}\$/,/^## v/p" CHANGELOG.md | sed '1d; /^## v/d' > release-notes.md
+          # Drop the heading, any trailing heading, and leading blank lines.
+          sed -n "/^## v${VERSION_RE}\$/,/^## v/p" CHANGELOG.md \
+            | sed '1d; /^## v/d' \
+            | sed '/./,$!d' > release-notes.md
           if [ ! -s release-notes.md ]; then
             echo "::warning::No '## v${VERSION}' section in CHANGELOG.md; using a generic release note."
             printf 'Release v%s\n' "$VERSION" > release-notes.md
@@ -129,18 +132,33 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Optional. Set the PLUGIN_MANIFEST_REPO repository variable (owner/repo of your Jellyfin
-      # plugin manifest repository) and a PAT_TOKEN secret with write access to it. The step
-      # no-ops with a notice when either is missing, so forks release fine without it.
-      - name: Trigger plugin repository update
+      # This repository is its own Jellyfin plugin repository: manifest.json is served straight from
+      # raw.githubusercontent.com. It can only be written after the release exists, because the
+      # checksum has to match the asset that was actually published.
+      - name: Update plugin manifest
         if: github.ref == 'refs/heads/main'
         env:
-          MANIFEST_REPO: ${{ vars.PLUGIN_MANIFEST_REPO }}
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
-          PLUGIN_GUID: a4df60c5-6ab4-412a-8f79-2cab93fb2bc5
-          CHECKSUM: ${{ steps.checksum.outputs.checksum }}
-          TARGET_ABI: ${{ steps.targetabi.outputs.targetabi }}
           VERSION: ${{ steps.version.outputs.version }}
+          TARGET_ABI: ${{ steps.targetabi.outputs.targetabi }}
           SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/jellynext-v${{ steps.version.outputs.version }}.zip
+          CHECKSUM: ${{ steps.checksum.outputs.checksum }}
           CHANGELOG_FILE: release-notes.md
-        run: .github/scripts/trigger-plugin-update.sh
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: .github/scripts/update-manifest.sh
+
+      - name: Commit plugin manifest
+        if: github.ref == 'refs/heads/main'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- manifest.json; then
+            echo "manifest.json already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          # Commits authored by GITHUB_TOKEN do not start new workflow runs, so this cannot loop.
+          git commit -m "Publish v${VERSION} to the plugin manifest [skip ci]"
+          git push origin HEAD:main

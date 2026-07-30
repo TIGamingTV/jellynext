@@ -1,0 +1,12 @@
+[
+  {
+    "guid": "a4df60c5-6ab4-412a-8f79-2cab93fb2bc5",
+    "name": "JellyNext",
+    "description": "Trakt-powered discovery for Jellyfin. Creates per-user virtual libraries for personalized Trakt recommendations and next seasons, with one-click downloads through Jellyseerr, Radarr, Sonarr or a custom webhook.",
+    "overview": "Trakt-powered discovery with one-click downloads.",
+    "owner": "TIGamingTV",
+    "category": "General",
+    "imageUrl": "https://raw.githubusercontent.com/TIGamingTV/jellynext/main/images/jellynext_logo.png",
+    "versions": []
+  }
+]

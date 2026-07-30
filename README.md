@@ -128,16 +128,19 @@ Features:
 
 ### Install from Repository
 
-> **Note:** This is a fork. The repository URL below serves **upstream** releases, so it will not
-> offer versions released from this fork. To install a fork build, use
-> [Manual Installation](#manual-installation), or publish your own plugin repository
-> (see [Releasing](#releasing)) and use that manifest URL instead.
+This repository is its own Jellyfin plugin repository — `manifest.json` at the root is served
+directly by raw.githubusercontent.com, and each release adds itself to it automatically.
 
 1. **Add Plugin Repository to Jellyfin**
    - Go to: **Dashboard → Plugins → Repositories**
    - Click **"+"** to add a new repository
-   - Enter repository URL: `https://raw.githubusercontent.com/luall0/jellyfin-luall0-plugins/refs/heads/main/manifest.json`
+   - Repository Name: `JellyNext`
+   - Enter repository URL: `https://raw.githubusercontent.com/TIGamingTV/jellynext/main/manifest.json`
    - Click **Save**
+
+   > Installing upstream releases instead? Use
+   > `https://raw.githubusercontent.com/luall0/jellyfin-luall0-plugins/refs/heads/main/manifest.json`.
+   > Do not add both — two repositories offering the same plugin GUID will conflict.
 
 2. **Install JellyNext Plugin**
    - Go to: **Dashboard → Plugins → Catalog**
@@ -578,23 +581,21 @@ To cut a release:
    mismatched heading yields a bare "Release v<version>" note.
 3. Merge to `main`.
 
-The workflow then builds the solution, packages `bin/Release/net9.0` as `jellynext-v<version>.zip`,
-and creates the GitHub release tagged `v<version>` with that asset. The version must not already be
-released — the workflow fails early rather than replacing an existing release's asset, which would
-invalidate the checksum already advertised to users.
+The workflow then:
 
-**Publishing to a Jellyfin plugin repository (optional).** After the release, the workflow can notify
-a plugin manifest repository via `repository_dispatch` so Jellyfin clients see the new version in
-their catalog. It needs two settings, and skips with a notice when either is missing:
+1. Builds the solution and packages `bin/Release/net9.0` as `jellynext-v<version>.zip`.
+2. Creates the GitHub release tagged `v<version>` with that asset. The version must not already be
+   released — it fails early rather than replacing an existing release's asset, which would
+   invalidate the checksum already advertised to users.
+3. Appends the version to `manifest.json` (newest first) with the asset's download URL and md5, and
+   commits that back to `main`. This is what makes the new version appear in Jellyfin's plugin
+   catalog for anyone who added the repository URL above.
 
-| Setting | Where | Value |
-|---|---|---|
-| `PLUGIN_MANIFEST_REPO` | Settings → Secrets and variables → Actions → **Variables** | `owner/repo` of a plugin manifest repository **you own** |
-| `PAT_TOKEN` | Settings → Secrets and variables → Actions → **Secrets** | Token with write access to that repository |
+No tokens or secrets are needed — the built-in `GITHUB_TOKEN` covers all of it. The manifest step
+runs after the release because the checksum has to match the asset that was actually published, and
+it is idempotent, so re-running a release does not duplicate entries.
 
-The download URL sent in the dispatch is derived from `github.repository`, so it always points at the
-repository that actually built the release. Note that forks do not inherit the upstream repository's
-secrets or variables, which is why this step is opt-in.
+`manifest.json` ships with an empty `versions` array; it fills in from the first release onward.
 
 ### Project Structure
 
