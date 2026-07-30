@@ -9,6 +9,16 @@
     "imageUrl": "https://raw.githubusercontent.com/TIGamingTV/jellynext/main/images/jellynext_logo.png",
     "versions": [
       {
+        "version": "1.5.0.0",
+        "changelog": "### Features\n\n- **Only Newly Released Seasons** (opt-in, per user): restricts Next Seasons to seasons that have just come out\n  - Next Seasons suggests the next unwatched season of every partially watched show, so a show that ended years ago sits in the library alongside a season that premiered last week. With the filter on, the library answers \"what's new for shows I watch\" instead of \"what haven't I finished\"\n  - New per-user settings `NextSeasonsRecentOnly` (default off, so existing behaviour is unchanged) and `NextSeasonsRecentDays` (default 90, 1-3650)\n  - A season part-way through its run always counts as new whatever its premiere date says, which keeps long and split-cour seasons visible past the cut-off. Ended and canceled shows are excluded from that rule, since their unaired episode counts are cancellation leftovers rather than an ongoing release\n  - A season with no premiere date from Trakt is treated as not recent — the filter excludes by default rather than letting undated backlog seasons through",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/jellynext/releases/download/v1.5.0.0/jellynext-v1.5.0.0.zip",
+        "checksum": "b2b028293df9201aa27e1f3630568822",
+        "timestamp": "2026-07-30T22:43:16Z",
+        "repositoryName": "JellyNext",
+        "repositoryUrl": "https://github.com/TIGamingTV/jellynext"
+      },
+      {
         "version": "1.4.1.0",
         "changelog": "### Bug Fixes\n\n- **Next Seasons was always empty**: `GetWatchedShows` still called `/sync/watched/shows?extended=full`\n  - Trakt changed the watched endpoints on 2026-07-03 ([trakt/trakt-api#775](https://github.com/trakt/trakt-api/discussions/775)): season progress is no longer returned by default, `noseasons` became the default and is now a no-op, and `extended=progress` must be requested explicitly\n  - Without a `seasons` array, `GetHighestWatchedSeason` found nothing for every show, so watch progress stayed empty and `NextSeasonsProvider` had nothing to iterate. The sync reported success with zero items and logged no errors\n  - Now requests `extended=full,progress`. Bare `progress` returns a minimal show object with no `status` and no `genres`, which would silently break ended-show detection and anime routing\n  - Also paginates. A request without pagination parameters now returns only page 1, capped at 100 items, so libraries with more than 100 watched shows were being truncated\n\n### Improvements\n\n- **Degraded responses are no longer silent**: this failure produced no errors at any layer\n  - `PerformFullSync` warns when watched shows were fetched but none carried season progress, and separately when none carried a show status, naming the likely cause in each case\n  - A full sync that returned shows but established no watch progress no longer advances the incremental-sync timestamp. Previously one bad full sync sent every later run down the incremental path, which only sees newly watched episodes, so the gap never closed and recovery required restarting Jellyfin to clear the in-memory timestamp",
         "targetAbi": "10.11.0.0",
