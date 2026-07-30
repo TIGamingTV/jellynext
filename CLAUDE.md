@@ -91,7 +91,8 @@ Plugin Entry → API Controllers → Services → Providers → Virtual Library 
 - `ConfigController.cs`: Serves modular tab HTML/JS from embedded resources (no auth required - page already admin-only)
 
 **Services** (`/Services/`):
-- `TraktApi.cs`: Trakt API client (OAuth, recommendations, trending, watchlist, watched shows, seasons, watch history with auto-pagination)
+- `TraktApi.cs`: Trakt API client (OAuth, recommendations, trending, watchlist, watched shows, seasons, watch history with auto-pagination). `CreateTraktClient()` is the single choke point for every authenticated call - mode-aware client id and token resolution live there.
+- `TraktPluginBridge.cs`: Reflection bridge to the official Jellyfin Trakt plugin's stored per-user tokens (see "Shared Trakt Connection" below)
 - `ContentCacheService.cs`: In-memory cache for content items (per-user, per-provider, 6hr expiration)
 - `ShowsCacheService.cs`: **Global season-level cache** + **per-user watch progress tracking**. Supports full sync (first run via `/sync/watched/shows`) and incremental sync (subsequent runs via `/sync/history/shows` with timestamps). Automatically handles ended vs ongoing shows, caching all seasons for ended shows and only complete seasons for ongoing shows. Tracks last sync timestamp in-memory for efficient delta syncing.
 - `ContentSyncService.cs`: Sync orchestrator (iterates users/providers, updates cache/virtual library)
@@ -195,6 +196,19 @@ Background: Plugin.PollingTasks[userGuid] = TraktApi.PollForTokenAsync()
 
 ### Configuration Access
 Use `Plugin.Instance?.Configuration` not `Plugin.Instance?.PluginConfiguration` - `BasePlugin<T>` exposes as `Configuration`
+
+### Shared Trakt Connection (Official Trakt Plugin Bridge)
+- **Why**: Trakt's free tier allows one connected community app per account, counted by distinct OAuth `client_id`. JellyNext and `jellyfin/jellyfin-plugin-trakt` are separate registered apps, so on a free account the second one to connect is rejected.
+- **`TraktAuthMode`** (in `PluginConfiguration`): `Standalone` (default, own client_id + own tokens), `SharedTraktPluginToken` (official client_id + borrow the official plugin's token), `SharedClientId` (official client_id + own token, experimental)
+- **`TraktPluginBridge`**: reflection-only access to the official plugin's live configuration
+  - **Plugins load into separate `AssemblyLoadContext`s** (`Emby.Server.Implementations.Plugins.PluginLoadContext`, one per plugin). A static reference to `Trakt.dll` would give a *different* `Type` identity, so everything Trakt-specific must go through reflection. `MediaBrowser.*` assemblies are not copied into plugin output dirs, so they resolve from the default ALC and shared abstractions (`IPluginManager`, `IHasPluginConfiguration`, `BasePluginConfiguration`) *are* safely castable.
+  - Locate the plugin via `IPluginManager.Plugins` by GUID `4fe3201e-d6ae-4f2e-8917-e12bda571281`, then `LocalPlugin.Instance as IHasPluginConfiguration`
+  - **Always target the live in-memory config object, never `Trakt.xml` on disk** - the official plugin caches its configuration and its next `SaveConfiguration()` would silently overwrite a direct file write
+  - Persist via `IHasPluginConfiguration.UpdateConfiguration(holder.Configuration)`; `BasePlugin<T>.UpdateConfiguration` assigns and saves the same instance
+  - User matching needs no mapping table: both plugins key on `LinkedMbUserId` (the Jellyfin user GUID)
+- **Refresh token rotation**: Trakt refresh tokens are single-use. Only one plugin may refresh. `RefreshSharedTokenAsync` checks `CanPersistToken()` *before* refreshing - a refresh that cannot be written back would consume the token and leave the official plugin holding a dead one. Per-user `SemaphoreSlim` prevents concurrent refreshes from parallel providers.
+- **Do not rely on the official plugin refreshing on a schedule**: its `SyncLibraryTask.GetDefaultTriggers()` returns empty, so it only refreshes as a side effect of scrobbling or a manually scheduled sync. A "wait for the official plugin" strategy can stall indefinitely on an idle server.
+- **`TraktAuthenticationException`**: signals "skip this cycle", not "no content". `ContentSyncService` catches it and leaves the cache untouched - overwriting with an empty list would tear down the user's virtual library on a transient token problem. Rethrown past the generic `catch (Exception)` handlers in providers/`ShowsCacheService`/`WatchlistSyncService`.
 
 ### Configuration Page Architecture
 - **Modular tabs**: Each tab isolated in `Configuration/tabs/{name}.html` + `{name}.js` (general, trakt, trending, downloads)

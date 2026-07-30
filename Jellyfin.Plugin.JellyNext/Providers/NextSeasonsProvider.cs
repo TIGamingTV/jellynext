@@ -19,6 +19,7 @@ public class NextSeasonsProvider : IContentProvider
     private readonly TraktApi _traktApi;
     private readonly LocalLibraryService _localLibraryService;
     private readonly ShowsCacheService _showsCache;
+    private readonly TraktPluginBridge _traktPluginBridge;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NextSeasonsProvider"/> class.
@@ -27,16 +28,19 @@ public class NextSeasonsProvider : IContentProvider
     /// <param name="traktApi">The Trakt API service.</param>
     /// <param name="localLibraryService">The local library service.</param>
     /// <param name="showsCache">The shows cache service.</param>
+    /// <param name="traktPluginBridge">Bridge to the official Trakt plugin's stored tokens.</param>
     public NextSeasonsProvider(
         ILogger<NextSeasonsProvider> logger,
         TraktApi traktApi,
         LocalLibraryService localLibraryService,
-        ShowsCacheService showsCache)
+        ShowsCacheService showsCache,
+        TraktPluginBridge traktPluginBridge)
     {
         _logger = logger;
         _traktApi = traktApi;
         _localLibraryService = localLibraryService;
         _showsCache = showsCache;
+        _traktPluginBridge = traktPluginBridge;
     }
 
     /// <inheritdoc />
@@ -49,12 +53,12 @@ public class NextSeasonsProvider : IContentProvider
     public bool IsEnabledForUser(Guid userId)
     {
         var traktUser = UserHelper.GetTraktUser(userId);
-        if (traktUser == null || string.IsNullOrWhiteSpace(traktUser.AccessToken))
+        if (!_traktPluginBridge.HasUsableToken(traktUser))
         {
             return false;
         }
 
-        return traktUser.SyncNextSeasons;
+        return traktUser!.SyncNextSeasons;
     }
 
     /// <inheritdoc />
@@ -94,6 +98,11 @@ public class NextSeasonsProvider : IContentProvider
                         contentItems.Add(contentItem);
                     }
                 }
+                catch (TraktAuthenticationException)
+                {
+                    // Surface auth failures so the caller skips the cycle instead of caching an empty result.
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(
@@ -107,6 +116,11 @@ public class NextSeasonsProvider : IContentProvider
                 "Found {Count} next season recommendations for user {UserId}",
                 contentItems.Count,
                 userId);
+        }
+        catch (TraktAuthenticationException)
+        {
+            // Surface auth failures so the caller skips the cycle instead of caching an empty result.
+            throw;
         }
         catch (Exception ex)
         {

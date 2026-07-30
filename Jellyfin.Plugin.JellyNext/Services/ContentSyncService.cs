@@ -160,6 +160,16 @@ public class ContentSyncService
                 provider.ProviderName,
                 userId);
         }
+        catch (TraktAuthenticationException ex)
+        {
+            // Leave the cache alone: overwriting it with an empty result would tear down the user's
+            // virtual library over a transient token problem.
+            _logger.LogWarning(
+                "Skipping {Provider} for user {UserId} without touching cached content: {Reason}",
+                provider.ProviderName,
+                userId,
+                ex.Message);
+        }
         catch (Exception ex)
         {
             _logger.LogError(

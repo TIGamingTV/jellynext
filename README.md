@@ -32,10 +32,52 @@ JellyNext is designed to work alongside the [official Jellyfin Trakt plugin](htt
 - This prevents playback attempts on virtual items from being marked as "watched" on Trakt
 - Your real media libraries can still sync normally with the official plugin
 
+#### Trakt's One-App Limit on Free Accounts
+
+Trakt's free tier allows **one connected community app per account**, counted by distinct OAuth
+client ID. JellyNext and the official Trakt plugin are two different registered apps, so on a free
+account whichever one connects second is rejected. Trakt VIP accounts are unaffected.
+
+The **Trakt → Trakt Connection** settings offer three authorization modes:
+
+| Mode | What JellyNext presents to Trakt | When to use |
+|---|---|---|
+| **Standalone** (default) | Its own client ID and its own per-user tokens | Trakt VIP, or you don't run the official Trakt plugin |
+| **Share the Trakt plugin's token** | The Trakt plugin's client ID and that plugin's stored token | Recommended for free accounts running both plugins |
+| **Own token, Trakt plugin's client ID** | The Trakt plugin's client ID, but a token JellyNext authorizes itself | Experimental — see the caveat below |
+
+**Share the Trakt plugin's token** is the safe option. JellyNext performs no authorization of its own
+and simply reads the access token the official Trakt plugin already holds for each Jellyfin user,
+matched on the Jellyfin user ID. Trakt therefore only ever sees a single connected app with a single
+token. Setup:
+
+1. Install and configure the official Trakt plugin, and link each user's Trakt account **there**.
+2. In JellyNext → Trakt, set **Authorization Mode** to *Share the Trakt plugin's token* and save.
+3. For each user, pick them in the user selector and press **Use the Trakt Plugin's Account**. This
+   registers the user with JellyNext so it has somewhere to store their sync preferences; no Trakt
+   authorization takes place.
+
+Because Trakt refresh tokens are single-use and rotate on every refresh, only one plugin may perform
+the refresh. **Let JellyNext refresh the shared token** (on by default) has JellyNext refresh an
+expired token and write the rotated pair straight back into the Trakt plugin's live configuration, so
+that plugin stays the sole holder of valid tokens. Turning it off makes JellyNext skip the sync cycle
+and wait instead — but be aware the official Trakt plugin only refreshes as a side effect of making a
+call (scrobbling, or its library sync task, which ships with no default schedule), so on a quiet
+server a token can stay expired indefinitely.
+
+**Own token, Trakt plugin's client ID** is a two-token setup under one client ID. It is marked
+experimental because it is unverified whether Trakt keeps the first token valid when the same client
+ID completes a second device authorization. If it does not, the two plugins will repeatedly knock each
+other offline. Prefer the shared-token mode unless you have confirmed the behaviour on your account.
+
+Under either shared mode JellyNext never calls `/scrobble/*` and never writes to your Trakt account
+other than the token refresh described above, so it does not compete with the official plugin's job.
+
 ## Features
 
 ### 🎯 Per-User Trakt Integration
 - **OAuth 2.0 Device Flow**: Each Jellyfin user links their own Trakt account securely
+- **Shared Trakt Connection**: Optionally borrow the official Trakt plugin's tokens so both plugins fit inside a free Trakt account's one-app limit
 - **Automatic Token Refresh**: Tokens refresh automatically before expiration (75% safety buffer)
 - **Per-User Settings**: Granular control over what content to sync (movie recommendations, show recommendations, next seasons)
 - **Privacy-Focused**: Each user's recommendations are based on their own Trakt watch history

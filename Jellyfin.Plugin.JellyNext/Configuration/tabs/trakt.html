@@ -1,3 +1,43 @@
+<!-- Trakt Application / Connection Mode -->
+<div class="verticalSection">
+    <h3 class="sectionTitle">Trakt Connection</h3>
+    <div class="fieldDescription" style="margin-bottom: 1em;">
+        Trakt's free tier allows one connected community app per account, counted by OAuth client ID.
+        If you also run the official Jellyfin Trakt plugin, a free account cannot connect both under
+        their own client IDs. These modes let JellyNext present itself as the same app as the Trakt plugin.
+    </div>
+
+    <div class="inputContainer">
+        <label class="inputLabel inputLabelUnfocused" for="TraktAuthMode">Authorization Mode:</label>
+        <select is="emby-select" id="TraktAuthMode" name="TraktAuthMode">
+            <option value="0">Standalone – JellyNext's own Trakt app (default)</option>
+            <option value="1">Share the Trakt plugin's token (recommended for free accounts)</option>
+            <option value="2">Own token, Trakt plugin's client ID (experimental)</option>
+        </select>
+        <div class="fieldDescription" id="TraktAuthModeDescription"></div>
+    </div>
+
+    <div class="checkboxContainer checkboxContainer-withDescription" id="AllowSharedTokenRefreshContainer" style="display: none;">
+        <label>
+            <input is="emby-checkbox" type="checkbox" id="AllowSharedTokenRefresh" />
+            <span>Let JellyNext refresh the shared token</span>
+        </label>
+        <div class="fieldDescription checkboxFieldDescription">
+            Trakt refresh tokens are single-use and rotate on every refresh, so only one plugin may
+            refresh. When enabled, JellyNext refreshes the expired token and immediately writes the
+            rotated pair back into the Trakt plugin's configuration, keeping it the sole holder of
+            valid tokens. When disabled, JellyNext skips the sync cycle and waits for the Trakt plugin
+            to refresh on its own — but note the Trakt plugin only refreshes when it makes a call
+            (scrobbling or its library sync task), so a token may stay expired for a long time on an
+            idle server. Default: enabled.
+        </div>
+    </div>
+
+    <div id="TraktPluginStatus" style="margin-top: 1em; display: none;">
+        <div class="fieldDescription" id="TraktPluginStatusText"></div>
+    </div>
+</div>
+
 <!-- User Trakt Authorization Section -->
 <div class="verticalSection">
     <h3 class="sectionTitle">Trakt Account Linking</h3>
@@ -14,16 +54,19 @@
 
     <div id="AuthorizationStatus" style="margin-top: 1em; display: none;">
         <div id="NotAuthorizedSection">
-            <div class="fieldDescription" style="margin-bottom: 1em;">
+            <div class="fieldDescription" style="margin-bottom: 1em;" id="NotAuthorizedText">
                 This user has not linked their Trakt account yet.
             </div>
             <button is="emby-button" type="button" id="AuthorizeBtn" class="raised button-submit">
                 <span>Link Trakt Account</span>
             </button>
+            <button is="emby-button" type="button" id="LinkSharedBtn" class="raised button-submit" style="display: none;">
+                <span>Use the Trakt Plugin's Account</span>
+            </button>
         </div>
 
         <div id="AuthorizedSection" style="display: none;">
-            <div class="fieldDescription" style="margin-bottom: 1em; color: #52B54B;">
+            <div class="fieldDescription" style="margin-bottom: 1em; color: #52B54B;" id="AuthorizedText">
                 ✓ This user has authorized their Trakt account.
             </div>
 
@@ -124,7 +167,7 @@
 
             <div style="margin-top: 1.5em;">
                 <button is="emby-button" type="button" id="DeauthorizeBtn" class="raised button-cancel">
-                    <span>Unlink Trakt Account</span>
+                    <span id="DeauthorizeBtnLabel">Unlink Trakt Account</span>
                 </button>
             </div>
         </div>

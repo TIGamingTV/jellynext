@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyNext.Helpers;
 using Jellyfin.Plugin.JellyNext.Services;
@@ -23,6 +24,7 @@ public class TraktController : ControllerBase
     private readonly ILogger<TraktController> _logger;
     private readonly TraktApi _traktApi;
     private readonly VirtualLibraryManager _virtualLibraryManager;
+    private readonly TraktPluginBridge _traktPluginBridge;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TraktController"/> class.
@@ -30,14 +32,88 @@ public class TraktController : ControllerBase
     /// <param name="logger">The logger.</param>
     /// <param name="traktApi">The Trakt API service.</param>
     /// <param name="virtualLibraryManager">The virtual library manager.</param>
+    /// <param name="traktPluginBridge">Bridge to the official Trakt plugin's stored tokens.</param>
     public TraktController(
         ILogger<TraktController> logger,
         TraktApi traktApi,
-        VirtualLibraryManager virtualLibraryManager)
+        VirtualLibraryManager virtualLibraryManager,
+        TraktPluginBridge traktPluginBridge)
     {
         _logger = logger;
         _traktApi = traktApi;
         _virtualLibraryManager = virtualLibraryManager;
+        _traktPluginBridge = traktPluginBridge;
+    }
+
+    /// <summary>
+    /// Reports whether the official Trakt plugin is present and which users it has linked.
+    /// </summary>
+    /// <returns>The shared authorization status.</returns>
+    [HttpGet("SharedStatus")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<object> GetSharedStatus()
+    {
+        return Ok(new
+        {
+            authMode = (int)TraktApi.AuthMode,
+            traktPluginAvailable = _traktPluginBridge.IsAvailable,
+            traktPluginVersion = _traktPluginBridge.PluginVersion,
+            linkedUserIds = _traktPluginBridge.GetLinkedUserIds().Select(id => id.ToString()).ToArray()
+        });
+    }
+
+    /// <summary>
+    /// Registers a Jellyfin user with JellyNext without running a device authorization flow.
+    /// </summary>
+    /// <param name="userGuid">The Jellyfin user GUID.</param>
+    /// <returns>Success status.</returns>
+    /// <remarks>
+    /// Used in shared-token mode: the token already lives in the official Trakt plugin, so JellyNext
+    /// only needs a configuration entry to hold this user's sync preferences.
+    /// </remarks>
+    [HttpPost("Users/{userGuid}/Link")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public ActionResult<object> LinkSharedUser([FromRoute][Required] Guid userGuid)
+    {
+        if (!TraktApi.UsesSharedToken)
+        {
+            return BadRequest(new
+            {
+                error = "Shared linking is only available when the Trakt authorization mode is set to "
+                        + "'Share the Trakt plugin's token'."
+            });
+        }
+
+        if (!_traktPluginBridge.IsAvailable)
+        {
+            return BadRequest(new
+            {
+                error = "The official Trakt plugin is not installed or not enabled."
+            });
+        }
+
+        if (_traktPluginBridge.GetToken(userGuid) == null)
+        {
+            return BadRequest(new
+            {
+                error = "The Trakt plugin has no linked Trakt account for this Jellyfin user. "
+                        + "Link it in the Trakt plugin's settings first."
+            });
+        }
+
+        if (UserHelper.GetTraktUser(userGuid) == null)
+        {
+            Plugin.Instance?.Configuration.AddUser(userGuid);
+            Plugin.Instance?.SaveConfiguration();
+            _virtualLibraryManager.InitializeUserDirectories(userGuid);
+        }
+
+        _logger.LogInformation("Linked user {UserGuid} to JellyNext using the Trakt plugin's token", userGuid);
+
+        return Ok(new { success = true });
     }
 
     /// <summary>
@@ -51,6 +127,16 @@ public class TraktController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<object>> AuthorizeUser([FromRoute][Required] Guid userGuid)
     {
+        if (TraktApi.UsesSharedToken)
+        {
+            // Checked before creating a configuration entry, so a rejected attempt leaves no orphan.
+            return BadRequest(new
+            {
+                error = "Device authorization is disabled while JellyNext shares the Trakt plugin's token. "
+                        + "Link the account in the Trakt plugin, then use 'Use the Trakt Plugin's Account'."
+            });
+        }
+
         try
         {
             var traktUser = UserHelper.GetTraktUser(userGuid);
@@ -97,11 +183,25 @@ public class TraktController : ControllerBase
     public ActionResult<object> GetAuthorizationStatus([FromRoute][Required] Guid userGuid)
     {
         var traktUser = UserHelper.GetTraktUser(userGuid);
+
+        if (TraktApi.UsesSharedToken)
+        {
+            // The token lives in the official Trakt plugin; JellyNext's own entry only holds settings.
+            return Ok(new
+            {
+                isAuthorized = traktUser != null && _traktPluginBridge.GetToken(userGuid) != null,
+                sharedMode = true,
+                traktPluginAvailable = _traktPluginBridge.IsAvailable,
+                traktPluginHasToken = _traktPluginBridge.GetToken(userGuid) != null,
+                registeredWithJellyNext = traktUser != null
+            });
+        }
+
         var isAuthorized = traktUser != null &&
                           !string.IsNullOrEmpty(traktUser.AccessToken) &&
                           !string.IsNullOrEmpty(traktUser.RefreshToken);
 
-        return Ok(new { isAuthorized });
+        return Ok(new { isAuthorized, sharedMode = false });
     }
 
     /// <summary>
