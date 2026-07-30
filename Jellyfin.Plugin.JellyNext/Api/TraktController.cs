@@ -251,6 +251,8 @@ public class TraktController : ControllerBase
             syncMovieRecommendations = traktUser.SyncMovieRecommendations,
             syncShowRecommendations = traktUser.SyncShowRecommendations,
             syncNextSeasons = traktUser.SyncNextSeasons,
+            nextSeasonsRecentOnly = traktUser.NextSeasonsRecentOnly,
+            nextSeasonsRecentDays = traktUser.NextSeasonsRecentDays,
             syncWatchlistMovies = traktUser.SyncWatchlistMovies,
             syncWatchlistShows = traktUser.SyncWatchlistShows,
             ignoreCollected = traktUser.IgnoreCollected,
@@ -282,6 +284,8 @@ public class TraktController : ControllerBase
         traktUser.SyncMovieRecommendations = settings.SyncMovieRecommendations;
         traktUser.SyncShowRecommendations = settings.SyncShowRecommendations;
         traktUser.SyncNextSeasons = settings.SyncNextSeasons;
+        traktUser.NextSeasonsRecentOnly = settings.NextSeasonsRecentOnly;
+        traktUser.NextSeasonsRecentDays = Math.Clamp(settings.NextSeasonsRecentDays, 1, 3650);
         traktUser.SyncWatchlistMovies = settings.SyncWatchlistMovies;
         traktUser.SyncWatchlistShows = settings.SyncWatchlistShows;
         traktUser.IgnoreCollected = settings.IgnoreCollected;
@@ -316,6 +320,16 @@ public class TraktController : ControllerBase
         /// Gets or sets a value indicating whether to sync next seasons.
         /// </summary>
         public bool SyncNextSeasons { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether next seasons are limited to recently released seasons.
+        /// </summary>
+        public bool NextSeasonsRecentOnly { get; set; }
+
+        /// <summary>
+        /// Gets or sets the new-release window for next seasons, in days (1-3650).
+        /// </summary>
+        public int NextSeasonsRecentDays { get; set; } = 90;
 
         /// <summary>
         /// Gets or sets a value indicating whether to ignore collected items.

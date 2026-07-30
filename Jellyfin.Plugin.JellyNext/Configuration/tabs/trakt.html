@@ -119,6 +119,24 @@
                     </div>
                 </div>
 
+                <h4 class="sectionTitle" style="font-size: 1em; margin-top: 1.5em;">Next Seasons Filters</h4>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label>
+                        <input is="emby-checkbox" type="checkbox" id="UserNextSeasonsRecentOnly" />
+                        <span>Only Newly Released Seasons</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        Only suggest a next season if it premiered recently or is still airing. Without this, every show you haven't finished shows up, including shows that ended years ago.
+                    </div>
+                </div>
+                <div class="inputContainer" id="UserNextSeasonsRecentDaysContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="UserNextSeasonsRecentDays">New Release Window (days):</label>
+                    <input is="emby-input" type="number" id="UserNextSeasonsRecentDays" name="UserNextSeasonsRecentDays" min="1" max="3650" />
+                    <div class="fieldDescription">
+                        How long after its premiere a season still counts as new (1-3650, default: 90). A season that is part-way through airing always counts as new.
+                    </div>
+                </div>
+
                 <h4 class="sectionTitle" style="font-size: 1em; margin-top: 1.5em;">Recommendation Limits</h4>
                 <div class="inputContainer">
                     <label class="inputLabel inputLabelUnfocused" for="UserMovieRecommendationsLimit">Movie Recommendations Limit:</label>

@@ -49,6 +49,17 @@ public class TraktUser
     public bool SyncNextSeasons { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets a value indicating whether next seasons are restricted to recently released seasons.
+    /// Opt-in: when disabled, every unwatched next season is suggested, including old backlog seasons.
+    /// </summary>
+    public bool NextSeasonsRecentOnly { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets how many days back a season may have premiered to still count as recently released (1-3650).
+    /// </summary>
+    public int NextSeasonsRecentDays { get; set; } = 90;
+
+    /// <summary>
     /// Gets or sets a value indicating whether to ignore collected items in recommendations for this user.
     /// </summary>
     public bool IgnoreCollected { get; set; } = true;
