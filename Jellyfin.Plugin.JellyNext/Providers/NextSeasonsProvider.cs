@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyNext.Helpers;
@@ -239,8 +240,8 @@ public class NextSeasonsProvider : IContentProvider
 
         if (traktUser.NextSeasonsRecentOnly && !IsRecentlyReleased(cachedShow, cachedSeason, traktUser))
         {
-            hiddenExamples.Add(
-                $"{cachedShow.Title} S{nextSeasonNumber} (premiered {cachedSeason.FirstAired?.ToString("yyyy-MM-dd") ?? "unknown"})");
+            var premiered = cachedSeason.FirstAired?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "unknown";
+            hiddenExamples.Add($"{cachedShow.Title} S{nextSeasonNumber} (premiered {premiered})");
             return (null, "hidden by the new-release filter");
         }
 
