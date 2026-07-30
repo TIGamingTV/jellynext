@@ -128,6 +128,11 @@ Features:
 
 ### Install from Repository
 
+> **Note:** This is a fork. The repository URL below serves **upstream** releases, so it will not
+> offer versions released from this fork. To install a fork build, use
+> [Manual Installation](#manual-installation), or publish your own plugin repository
+> (see [Releasing](#releasing)) and use that manifest URL instead.
+
 1. **Add Plugin Repository to Jellyfin**
    - Go to: **Dashboard → Plugins → Repositories**
    - Click **"+"** to add a new repository
@@ -545,7 +550,7 @@ If your client doesn't support automatic playback stop, this is a Jellyfin nativ
 
 ```bash
 # Clone the repository
-git clone https://github.com/luall0/jellynext.git
+git clone https://github.com/TIGamingTV/jellynext.git
 cd jellynext
 
 # Restore dependencies
@@ -559,6 +564,37 @@ dotnet build -c Release Jellyfin.Plugin.JellyNext/Jellyfin.Plugin.JellyNext.cspr
 
 # Output will be in: Jellyfin.Plugin.JellyNext/bin/Release/net9.0/
 ```
+
+### Releasing
+
+Releases are produced by `.github/workflows/build.yml`. Pull requests targeting `main` run a
+build-only validation pass; **pushing to `main` publishes**, so treat the merge as the release.
+
+To cut a release:
+
+1. Bump `<AssemblyVersion>` **and** `<FileVersion>` in `Jellyfin.Plugin.JellyNext.csproj`.
+2. Add a matching `## v<version>` section to `CHANGELOG.md`. The workflow extracts everything between
+   that heading and the next `## v` heading and uses it as the GitHub release body, so a missing or
+   mismatched heading yields a bare "Release v<version>" note.
+3. Merge to `main`.
+
+The workflow then builds the solution, packages `bin/Release/net9.0` as `jellynext-v<version>.zip`,
+and creates the GitHub release tagged `v<version>` with that asset. The version must not already be
+released — the workflow fails early rather than replacing an existing release's asset, which would
+invalidate the checksum already advertised to users.
+
+**Publishing to a Jellyfin plugin repository (optional).** After the release, the workflow can notify
+a plugin manifest repository via `repository_dispatch` so Jellyfin clients see the new version in
+their catalog. It needs two settings, and skips with a notice when either is missing:
+
+| Setting | Where | Value |
+|---|---|---|
+| `PLUGIN_MANIFEST_REPO` | Settings → Secrets and variables → Actions → **Variables** | `owner/repo` of a plugin manifest repository **you own** |
+| `PAT_TOKEN` | Settings → Secrets and variables → Actions → **Secrets** | Token with write access to that repository |
+
+The download URL sent in the dispatch is derived from `github.repository`, so it always points at the
+repository that actually built the release. Note that forks do not inherit the upstream repository's
+secrets or variables, which is why this step is opt-in.
 
 ### Project Structure
 
