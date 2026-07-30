@@ -61,6 +61,8 @@ public class ShowsCacheService
         var watchedShows = await _traktApi.GetWatchedShows(traktUser);
         _logger.LogInformation("Found {Count} watched shows for user {UserId}", watchedShows.Length, traktUser.LinkedMbUserId);
 
+        WarnOnDegradedWatchedShows(watchedShows);
+
         foreach (var watchedShow in watchedShows)
         {
             if (watchedShow.Show.Ids.Tvdb == null || watchedShow.Show.Ids.Tvdb == 0)
@@ -97,11 +99,65 @@ public class ShowsCacheService
             }
         }
 
+        var userProgress = GetUserWatchProgress(traktUser.LinkedMbUserId);
+
+        // A full sync that returned shows but no progress at all has not established a baseline.
+        // Advancing the timestamp anyway would send every later run down the incremental path, which
+        // only sees newly watched episodes, so the gap would never be filled and recovery would need
+        // a Jellyfin restart to clear this in-memory timestamp. Leave it unset and retry a full sync.
+        if (watchedShows.Length > 0 && userProgress.IsEmpty)
+        {
+            _logger.LogWarning(
+                "Fetched {Count} watched shows for user {UserId} but none carried season progress, so "
+                + "Next Seasons will be empty. Trakt only returns season progress for "
+                + "'/sync/watched/shows?extended=progress'; if this persists, the response shape has "
+                + "changed again. Retrying a full sync on the next run",
+                watchedShows.Length,
+                traktUser.LinkedMbUserId);
+            return;
+        }
+
         // Set last sync timestamp to now - 1 minute for next incremental sync (in-memory only)
         _userLastSyncTimestamp[traktUser.LinkedMbUserId] = DateTime.UtcNow.AddMinutes(-1);
 
-        var userProgress = GetUserWatchProgress(traktUser.LinkedMbUserId);
         _logger.LogInformation("Full sync completed for user {UserId}, cached {Count} shows with watch progress", traktUser.LinkedMbUserId, userProgress.Count);
+    }
+
+    /// <summary>
+    /// Warns when a watched-shows response is missing data later stages depend on.
+    /// </summary>
+    /// <param name="watchedShows">The fetched watched shows.</param>
+    /// <remarks>
+    /// JellyNext asks for <c>extended=full,progress</c>, an undocumented combination. Should Trakt
+    /// stop honouring it, the fallout would otherwise be invisible: a response with no season
+    /// progress empties Next Seasons, and one with no show status makes every show look ongoing, so
+    /// only complete seasons get cached and anime routing loses its genre data.
+    /// </remarks>
+    private void WarnOnDegradedWatchedShows(TraktWatchedShow[] watchedShows)
+    {
+        if (watchedShows.Length == 0)
+        {
+            return;
+        }
+
+        var withoutSeasons = watchedShows.Count(s => s.Seasons.Length == 0);
+        if (withoutSeasons == watchedShows.Length)
+        {
+            _logger.LogWarning(
+                "None of the {Count} watched shows returned a 'seasons' array. Trakt stopped sending "
+                + "season progress by default on 2026-07-03; 'extended=progress' is required",
+                watchedShows.Length);
+        }
+
+        var withoutStatus = watchedShows.Count(s => string.IsNullOrEmpty(s.Show.Status));
+        if (withoutStatus == watchedShows.Length)
+        {
+            _logger.LogWarning(
+                "None of the {Count} watched shows returned a 'status' field, so every show will be "
+                + "treated as ongoing and anime detection has no genres to work with. "
+                + "'extended=full,progress' may no longer return the full show object",
+                watchedShows.Length);
+        }
     }
 
     /// <summary>
