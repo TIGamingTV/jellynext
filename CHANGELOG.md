@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.5.1.0
+
+### Improvements
+
+- **Next Seasons reports why shows produced nothing**: an empty library previously gave no explanation at the default log level, since every skip was a debug-only message
+  - The run summary now counts each outcome — no aired next season, hidden by the new-release filter, already in the Jellyfin library — instead of only reporting how many suggestions were found
+  - When the new-release filter hides seasons, up to ten are named with their premiere date and the active window, which distinguishes "correctly filtered old backlog" from a window that is too narrow or metadata Trakt did not return
+
 ## v1.5.0.0
 
 ### Features

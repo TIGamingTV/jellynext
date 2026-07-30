@@ -88,14 +88,23 @@ public class NextSeasonsProvider : IContentProvider
                 return Array.Empty<ContentItem>();
             }
 
+            // Why a show produced nothing is the only useful thing to know when the library comes out
+            // empty, so the reasons are counted and reported together rather than left in debug logs.
+            var skipReasons = new Dictionary<string, int>();
+            var hiddenExamples = new List<string>();
+
             foreach (var (show, highestWatchedSeason) in watchedShowsList)
             {
                 try
                 {
-                    var contentItem = await ProcessWatchedShowAsync(show, highestWatchedSeason, traktUser);
+                    var (contentItem, skipReason) = await ProcessWatchedShowAsync(show, highestWatchedSeason, traktUser, hiddenExamples);
                     if (contentItem != null)
                     {
                         contentItems.Add(contentItem);
+                    }
+                    else if (skipReason != null)
+                    {
+                        skipReasons[skipReason] = skipReasons.GetValueOrDefault(skipReason) + 1;
                     }
                 }
                 catch (TraktAuthenticationException)
@@ -113,9 +122,21 @@ public class NextSeasonsProvider : IContentProvider
             }
 
             _logger.LogInformation(
-                "Found {Count} next season recommendations for user {UserId}",
+                "Found {Count} next season recommendations for user {UserId} (skipped: {SkipReasons})",
                 contentItems.Count,
-                userId);
+                userId,
+                skipReasons.Count == 0
+                    ? "none"
+                    : string.Join(", ", skipReasons.Select(reason => $"{reason.Key}={reason.Value}")));
+
+            if (hiddenExamples.Count > 0)
+            {
+                _logger.LogInformation(
+                    "Hidden by the {Days} day new-release filter for user {UserId}: {Examples}",
+                    traktUser.NextSeasonsRecentDays,
+                    userId,
+                    string.Join("; ", hiddenExamples.Take(10)));
+            }
         }
         catch (TraktAuthenticationException)
         {
@@ -142,12 +163,17 @@ public class NextSeasonsProvider : IContentProvider
 
     /// <summary>
     /// Processes a watched show to determine if next season should be recommended.
+    /// Returns the suggestion, or the reason the show produced none.
     /// </summary>
-    private async Task<ContentItem?> ProcessWatchedShowAsync(ShowCacheEntry cachedShow, int highestWatchedSeason, TraktUser traktUser)
+    private async Task<(ContentItem? Item, string? SkipReason)> ProcessWatchedShowAsync(
+        ShowCacheEntry cachedShow,
+        int highestWatchedSeason,
+        TraktUser traktUser,
+        List<string> hiddenExamples)
     {
         if (!cachedShow.TvdbId.HasValue || cachedShow.TvdbId.Value == 0)
         {
-            return null;
+            return (null, "no TVDB id");
         }
 
         var tvdbId = cachedShow.TvdbId.Value;
@@ -192,14 +218,14 @@ public class NextSeasonsProvider : IContentProvider
                     "Next season S{Season} does not exist or has not aired for {Title}",
                     nextSeasonNumber,
                     cachedShow.Title);
-                return null;
+                return (null, "next season does not exist or has not aired");
             }
         }
 
         // If season not found (even after fetch), return null
         if (cachedSeason == null)
         {
-            return null;
+            return (null, "next season not in cache for an ended show");
         }
 
         // Check if season has aired
@@ -209,18 +235,14 @@ public class NextSeasonsProvider : IContentProvider
                 "Next season S{Season} has not aired yet for {Title}",
                 nextSeasonNumber,
                 cachedShow.Title);
-            return null;
+            return (null, "next season has not aired");
         }
 
         if (traktUser.NextSeasonsRecentOnly && !IsRecentlyReleased(cachedShow, cachedSeason, traktUser))
         {
-            _logger.LogDebug(
-                "Next season S{Season} of {Title} premiered {FirstAired}, outside the {Days} day new-release window",
-                nextSeasonNumber,
-                cachedShow.Title,
-                cachedSeason.FirstAired,
-                traktUser.NextSeasonsRecentDays);
-            return null;
+            hiddenExamples.Add(
+                $"{cachedShow.Title} S{nextSeasonNumber} (premiered {cachedSeason.FirstAired?.ToString("yyyy-MM-dd") ?? "unknown"})");
+            return (null, "hidden by the new-release filter");
         }
 
         // Check if season exists in local library
@@ -231,7 +253,7 @@ public class NextSeasonsProvider : IContentProvider
                 "Next season S{Season} already exists locally for {Title}",
                 nextSeasonNumber,
                 cachedShow.Title);
-            return null;
+            return (null, "already in the Jellyfin library");
         }
 
         // Recommend the next season
@@ -241,19 +263,21 @@ public class NextSeasonsProvider : IContentProvider
             cachedShow.Title,
             tvdbId);
 
-        return new ContentItem
-        {
-            Type = ContentType.Show,
-            Title = cachedShow.Title,
-            Year = cachedShow.Year,
-            TmdbId = cachedShow.TmdbId,
-            ImdbId = cachedShow.ImdbId,
-            TvdbId = cachedShow.TvdbId,
-            TraktId = cachedShow.TraktId,
-            ProviderName = ProviderName,
-            SeasonNumber = nextSeasonNumber,
-            Genres = cachedShow.Genres
-        };
+        return (
+            new ContentItem
+            {
+                Type = ContentType.Show,
+                Title = cachedShow.Title,
+                Year = cachedShow.Year,
+                TmdbId = cachedShow.TmdbId,
+                ImdbId = cachedShow.ImdbId,
+                TvdbId = cachedShow.TvdbId,
+                TraktId = cachedShow.TraktId,
+                ProviderName = ProviderName,
+                SeasonNumber = nextSeasonNumber,
+                Genres = cachedShow.Genres
+            },
+            null);
     }
 
     /// <summary>
