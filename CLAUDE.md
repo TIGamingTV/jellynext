@@ -302,7 +302,8 @@ Implement `IContentProvider` + register in `PluginServiceRegistrator` → automa
 - **Data models**:
   - `ShowCacheEntry`: Title, Year, IDs (TMDB/IMDB/TVDB/Trakt), Status, Genres, Seasons dictionary, CachedAt
   - `SeasonMetadata`: SeasonNumber, EpisodeCount, AiredEpisodes, FirstAired, CachedAt, IsComplete property
-- **Sync strategy**: every run reads `/sync/watched/shows?extended=full,progress` (paginated, 100/page) and sets watch progress from it. `GetShowSeasons` is called only for shows that are uncached or whose progress moved, which keeps the per-show cost off the steady state without making progress depend on a time window - see "Watch Progress Comes From the Watched Snapshot" above
+- **Sync strategy**: every run reads `/sync/watched/shows?extended=full,progress` (paginated, 100/page) and sets watch progress from it. `GetShowSeasons` is called only for shows that are uncached, whose progress moved, or whose metadata is older than `SeasonMetadataMaxAge` (7 days) - see "Watch Progress Comes From the Watched Snapshot" above
+- **Staleness re-read**: the 7-day rule exists for *ended* shows. `NextSeasonsProvider` only fetches on demand when `!IsEnded`, so without it a show cached as ended is frozen for the process lifetime and a revival season never appears. The re-read also refreshes `Status`, so a returning show resumes caching incomplete seasons
 - **Caching logic**:
   - **Ended/canceled shows**: Cache all seasons immediately (won't change)
   - **Ongoing shows**: Only cache complete seasons where `episode_count == aired_episodes`, update incomplete seasons if already cached. A season currently airing is therefore usually absent from the cache; `NextSeasonsProvider` fetches it from Trakt on demand, which is how newly premiered seasons are discovered

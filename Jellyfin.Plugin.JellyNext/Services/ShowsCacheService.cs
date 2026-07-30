@@ -14,6 +14,12 @@ namespace Jellyfin.Plugin.JellyNext.Services;
 /// </summary>
 public class ShowsCacheService
 {
+    // How long cached season metadata is trusted for a show whose watch progress has not moved.
+    // Ended shows are otherwise never re-read: the provider only queries Trakt on demand for ongoing
+    // shows, so without this a revival season would stay invisible until Jellyfin restarted and
+    // dropped the in-memory cache.
+    private static readonly TimeSpan SeasonMetadataMaxAge = TimeSpan.FromDays(7);
+
     private readonly ILogger<ShowsCacheService> _logger;
     private readonly TraktApi _traktApi;
 
@@ -86,8 +92,10 @@ public class ShowsCacheService
                 var highestWatchedSeason = GetHighestWatchedSeason(watchedShow);
                 var knownSeason = userProgress.TryGetValue(tvdbId, out var known) ? known : (int?)null;
                 var progressMoved = highestWatchedSeason.HasValue && highestWatchedSeason != knownSeason;
+                var cached = GetCachedShow(tvdbId);
+                var stale = cached != null && DateTime.UtcNow - cached.CachedAt > SeasonMetadataMaxAge;
 
-                if (progressMoved || !_showsCache.ContainsKey(tvdbId))
+                if (progressMoved || cached == null || stale)
                 {
                     await CacheShowWithSeasons(watchedShow.Show, traktUser);
                     seasonsFetched++;
@@ -219,9 +227,12 @@ public class ShowsCacheService
             CachedAt = DateTime.UtcNow
         });
 
-        // Update show metadata
+        // Update show metadata. Refreshing the timestamp is what keeps a show off the staleness path
+        // until the next interval; the status is refreshed with it, so a show that returns from
+        // "ended" starts getting its incomplete seasons cached again.
         cacheEntry.Status = show.Status ?? "unknown";
         cacheEntry.Genres = show.Genres ?? Array.Empty<string>();
+        cacheEntry.CachedAt = DateTime.UtcNow;
 
         // Cache seasons based on show status
         var cachedSeasons = 0;

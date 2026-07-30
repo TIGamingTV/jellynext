@@ -11,6 +11,10 @@
   - Progress is also set rather than merged with the previous value, so unmarking a season no longer pins a show to a season it is past
   - Each show whose progress changes is logged (`Watch progress for X: S2 -> S4`), and the run reports how many shows are tracked, how many moved, and how many season lookups it made
 
+- **Ended shows were never re-read from Trakt**: a revival season stayed invisible for as long as Jellyfin kept running
+  - `NextSeasonsProvider` only queries Trakt on demand for shows that have not ended, and the sync only refetched seasons when watch progress moved, so a show cached as ended was frozen until a restart dropped the in-memory cache
+  - Season metadata is now re-read when it is older than 7 days even if nothing else changed, which also refreshes the show's status so a returning show starts caching its incomplete seasons again
+
 ### Improvements
 
 - **Next Seasons reports why shows produced nothing**: an empty library previously gave no explanation at the default log level, since every skip was a debug-only message
