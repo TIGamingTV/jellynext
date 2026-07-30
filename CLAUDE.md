@@ -185,6 +185,16 @@ Background: Plugin.PollingTasks[userGuid] = TraktApi.PollForTokenAsync()
 ### Trakt Extended Metadata
 **Use `extended=full`**: Required to retrieve genre data for anime detection - add to recommendations and watched shows endpoints
 
+### Trakt Watched Endpoints (changed 2026-07-03)
+[trakt/trakt-api#775](https://github.com/trakt/trakt-api/discussions/775) changed `/sync/watched/*`:
+- **Season progress is no longer returned by default.** `noseasons` became the default and is now a no-op; `extended=progress` must be requested explicitly or the `seasons` array is absent entirely.
+- **Use `extended=full,progress`, never bare `progress`.** On its own, `progress` returns a minimal show object (title/year/ids/aired_episodes) with no `status` and no `genres`, which silently breaks `IsShowEnded()` (every show looks ongoing, so only complete seasons get cached) and anime detection (`ShowCacheEntry.Genres` drives Sonarr folder/profile routing). The combination is **undocumented** - `ShowsCacheService.WarnOnDegradedWatchedShows` asserts on both pieces so a regression is visible in the log.
+- **Always paginate.** A request without pagination parameters returns page 1 only, capped at 100 items - previously this silently truncated large libraries. `extended=progress` is capped at 100/page. Trust `X-Pagination-Page-Count` over the requested limit.
+- **Failure was totally silent**: 200 responses, no `seasons` key, empty watch progress, "sync completed successfully" with 0 items. Prefer explicit assertions over trusting response shape.
+
+### Full Sync Must Not Poison the Incremental Path
+`ShowsCacheService.PerformFullSync` only advances `_userLastSyncTimestamp` when it actually established watch progress. A full sync that returned shows but no progress leaves the timestamp unset so the next run retries a full sync. Advancing it unconditionally sent every later run down the incremental path (`/sync/history/shows`, which only sees *newly* watched episodes), so the gap never closed and recovery needed a Jellyfin restart to clear the in-memory timestamp.
+
 ### Per-User Architecture
 - Each user has own Trakt OAuth token (stored in `PluginConfiguration.TraktUsers[]`)
 - Per-user sync settings: `SyncMovieRecommendations`, `SyncShowRecommendations`, `SyncNextSeasons`, `SyncWatchlistMovies`, `SyncWatchlistShows`, `IgnoreCollected`, `IgnoreWatchlisted`, `LimitShowsToSeasonOne`, `MovieRecommendationsLimit`, `ShowRecommendationsLimit`, `LastHistorySyncTimestamp` (all in `TraktUser` model)

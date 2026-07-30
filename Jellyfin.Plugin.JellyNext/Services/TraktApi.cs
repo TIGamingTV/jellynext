@@ -551,29 +551,103 @@ public class TraktApi
     }
 
     /// <summary>
-    /// Gets the user's watched shows with season/episode progress.
+    /// Gets the user's watched shows with season/episode progress, fetching all pages.
     /// </summary>
     /// <param name="traktUser">The Trakt user configuration.</param>
     /// <returns>List of watched shows with progress information.</returns>
+    /// <remarks>
+    /// <para>
+    /// Trakt changed this endpoint on 2026-07-03 (trakt/trakt-api discussion 775). Season progress
+    /// is no longer returned by default - <c>noseasons</c> became the default and is now a no-op -
+    /// so <c>extended=progress</c> has to be requested explicitly. A request without pagination
+    /// parameters also returns only page 1, capped at 100 items, so the results must be paged
+    /// through rather than read in one call.
+    /// </para>
+    /// <para>
+    /// <c>full,progress</c> rather than bare <c>progress</c>: on its own, <c>progress</c> returns a
+    /// minimal show object with no <c>status</c> and no <c>genres</c>. That would silently break
+    /// ended-show detection (every show would look ongoing, so only complete seasons would be
+    /// cached) and anime detection, which routes downloads to a different Sonarr folder and
+    /// profile. The combination is undocumented, so <see cref="ShowsCacheService"/> warns if the
+    /// response ever stops carrying either piece.
+    /// </para>
+    /// </remarks>
     public async Task<TraktWatchedShow[]> GetWatchedShows(TraktUser traktUser)
     {
-        using var httpClient = await CreateTraktClient(traktUser);
-        var response = await httpClient.GetAsync("/sync/watched/shows?extended=full");
+        const int PageSize = 100;
+        const int MaxPages = 100;
 
-        if (!response.IsSuccessStatusCode)
+        var allWatchedShows = new List<TraktWatchedShow>();
+        var page = 1;
+
+        while (page <= MaxPages)
         {
-            ThrowIfUnauthorized(response, "watched shows");
+            using var httpClient = await CreateTraktClient(traktUser);
+            var response = await httpClient.GetAsync(
+                $"/sync/watched/shows?page={page}&limit={PageSize}&extended=full,progress");
 
-            var errorContent = await response.Content.ReadAsStringAsync();
-            _logger.LogError(
-                "Failed to get watched shows: Status={Status}, Content={Content}",
-                response.StatusCode,
-                errorContent);
-            return Array.Empty<TraktWatchedShow>();
+            if (!response.IsSuccessStatusCode)
+            {
+                ThrowIfUnauthorized(response, "watched shows");
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogError(
+                    "Failed to get watched shows (page {Page}): Status={Status}, Content={Content}",
+                    page,
+                    response.StatusCode,
+                    errorContent);
+                break;
+            }
+
+            var watchedShows = await response.Content.ReadFromJsonAsync<TraktWatchedShow[]>(_jsonOptions);
+            if (watchedShows == null || watchedShows.Length == 0)
+            {
+                break;
+            }
+
+            allWatchedShows.AddRange(watchedShows);
+
+            // Trakt caps the applied page size, so the header is more reliable than the limit we asked for.
+            var pageCount = TryGetPageCount(response);
+            if (pageCount.HasValue ? page >= pageCount.Value : watchedShows.Length < PageSize)
+            {
+                break;
+            }
+
+            page++;
         }
 
-        var watchedShows = await response.Content.ReadFromJsonAsync<TraktWatchedShow[]>(_jsonOptions);
-        return watchedShows ?? Array.Empty<TraktWatchedShow>();
+        if (page > MaxPages)
+        {
+            _logger.LogWarning(
+                "Stopped fetching watched shows for user {UserId} after {MaxPages} pages",
+                traktUser.LinkedMbUserId,
+                MaxPages);
+        }
+
+        _logger.LogInformation(
+            "Fetched {Count} watched shows across {PageCount} page(s) for user {UserId}",
+            allWatchedShows.Count,
+            Math.Min(page, MaxPages),
+            traktUser.LinkedMbUserId);
+
+        return allWatchedShows.ToArray();
+    }
+
+    /// <summary>
+    /// Reads Trakt's X-Pagination-Page-Count response header.
+    /// </summary>
+    /// <param name="response">The Trakt response.</param>
+    /// <returns>The total page count, or null when the header is absent or unparseable.</returns>
+    private static int? TryGetPageCount(HttpResponseMessage response)
+    {
+        if (response.Headers.TryGetValues("X-Pagination-Page-Count", out var values)
+            && int.TryParse(values.FirstOrDefault(), out var pageCount))
+        {
+            return pageCount;
+        }
+
+        return null;
     }
 
     /// <summary>

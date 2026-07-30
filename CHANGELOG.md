@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.4.1.0
+
+### Bug Fixes
+
+- **Next Seasons was always empty**: `GetWatchedShows` still called `/sync/watched/shows?extended=full`
+  - Trakt changed the watched endpoints on 2026-07-03 ([trakt/trakt-api#775](https://github.com/trakt/trakt-api/discussions/775)): season progress is no longer returned by default, `noseasons` became the default and is now a no-op, and `extended=progress` must be requested explicitly
+  - Without a `seasons` array, `GetHighestWatchedSeason` found nothing for every show, so watch progress stayed empty and `NextSeasonsProvider` had nothing to iterate. The sync reported success with zero items and logged no errors
+  - Now requests `extended=full,progress`. Bare `progress` returns a minimal show object with no `status` and no `genres`, which would silently break ended-show detection and anime routing
+  - Also paginates. A request without pagination parameters now returns only page 1, capped at 100 items, so libraries with more than 100 watched shows were being truncated
+
+### Improvements
+
+- **Degraded responses are no longer silent**: this failure produced no errors at any layer
+  - `PerformFullSync` warns when watched shows were fetched but none carried season progress, and separately when none carried a show status, naming the likely cause in each case
+  - A full sync that returned shows but established no watch progress no longer advances the incremental-sync timestamp. Previously one bad full sync sent every later run down the incremental path, which only sees newly watched episodes, so the gap never closed and recovery required restarting Jellyfin to clear the in-memory timestamp
+
 ## v1.4.0.0
 
 ### Features
