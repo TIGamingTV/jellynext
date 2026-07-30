@@ -213,6 +213,10 @@ After authorization, configure what to sync for each user:
 - ☐ **Sync Watchlist Movies**: Automatically add watchlisted movies to your download system
 - ☐ **Sync Watchlist Shows**: Automatically add watchlisted shows to your download system
 
+**Next Seasons Filters:**
+- ☐ **Only Newly Released Seasons**: Only suggest a next season if it premiered recently or is still airing. Off by default, which suggests the next unwatched season of every show you haven't finished, including shows that ended years ago
+- **New Release Window (days)**: How long after its premiere a season still counts as new (1-3650, default: 90). A season part-way through its run always counts as new
+
 **Recommendation Limits:**
 - **Movie Recommendations Limit**: Number of movie recommendations to fetch (1-100, default: 50)
 - **Show Recommendations Limit**: Number of show recommendations to fetch (1-100, default: 50)
@@ -870,6 +874,9 @@ A: Default is every 6 hours. Configurable via "Cache Expiration (hours)" setting
 A:
 - **Show Recommendations**: New shows you might like (based on Trakt)
 - **Next Seasons**: Next unwatched season of shows you're already watching
+
+**Q: Next Seasons lists every show I haven't finished. Can I see only new releases?**
+A: Yes — enable "Only Newly Released Seasons" in the per-user settings. It keeps a show out of the library unless the season you're up next on premiered within the release window (default 90 days) or is still airing, so the library becomes "what just came out for shows I watch" rather than a backlog list. Note that if you're several seasons behind on a show, its old next season stays hidden.
 
 **Q: Why only 10 seasons for show recommendations?**
 A: Performance. Jellyfin scans can be slow with thousands of stub files. Enable "Limit Shows to Season 1" for even better performance.

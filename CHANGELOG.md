@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.5.0.0
+
+### Features
+
+- **Only Newly Released Seasons** (opt-in, per user): restricts Next Seasons to seasons that have just come out
+  - Next Seasons suggests the next unwatched season of every partially watched show, so a show that ended years ago sits in the library alongside a season that premiered last week. With the filter on, the library answers "what's new for shows I watch" instead of "what haven't I finished"
+  - New per-user settings `NextSeasonsRecentOnly` (default off, so existing behaviour is unchanged) and `NextSeasonsRecentDays` (default 90, 1-3650)
+  - A season part-way through its run always counts as new whatever its premiere date says, which keeps long and split-cour seasons visible past the cut-off. Ended and canceled shows are excluded from that rule, since their unaired episode counts are cancellation leftovers rather than an ongoing release
+  - A season with no premiere date from Trakt is treated as not recent — the filter excludes by default rather than letting undated backlog seasons through
+
 ## v1.4.1.0
 
 ### Bug Fixes

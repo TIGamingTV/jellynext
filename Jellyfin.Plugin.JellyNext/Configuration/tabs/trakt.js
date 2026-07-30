@@ -21,6 +21,7 @@ var TRAKT_AUTH_MODE_DESCRIPTIONS = {
 function initTraktTab() {
     // Set up event listeners for Trakt tab
     setupTraktEventListeners();
+    onNextSeasonsRecentOnlyChanged();
     console.log('Trakt tab initialized');
 }
 
@@ -54,6 +55,11 @@ function onAuthModeChanged() {
     if (JellyNextConfig.currentUserGuid) {
         checkAuthorizationStatus(JellyNextConfig.currentUserGuid);
     }
+}
+
+function onNextSeasonsRecentOnlyChanged() {
+    var enabled = document.getElementById('UserNextSeasonsRecentOnly').checked;
+    document.getElementById('UserNextSeasonsRecentDaysContainer').style.display = enabled ? 'block' : 'none';
 }
 
 function loadTraktPluginStatus() {
@@ -91,6 +97,10 @@ function loadTraktPluginStatus() {
 function setupTraktEventListeners() {
     // Authorization mode change
     document.getElementById('TraktAuthMode').addEventListener('change', onAuthModeChanged);
+
+    // The new-release window only means anything while the filter is on
+    document.getElementById('UserNextSeasonsRecentOnly')
+        .addEventListener('change', onNextSeasonsRecentOnlyChanged);
 
     // Register a user whose token already lives in the official Trakt plugin
     document.getElementById('LinkSharedBtn').addEventListener('click', function () {
@@ -280,6 +290,9 @@ function loadUserSettings() {
         document.getElementById('UserSyncMovieRecommendations').checked = settings.syncMovieRecommendations !== false;
         document.getElementById('UserSyncShowRecommendations').checked = settings.syncShowRecommendations !== false;
         document.getElementById('UserSyncNextSeasons').checked = settings.syncNextSeasons !== false;
+        document.getElementById('UserNextSeasonsRecentOnly').checked = settings.nextSeasonsRecentOnly === true;
+        document.getElementById('UserNextSeasonsRecentDays').value = settings.nextSeasonsRecentDays || 90;
+        onNextSeasonsRecentOnlyChanged();
         document.getElementById('UserSyncWatchlistMovies').checked = settings.syncWatchlistMovies === true;
         document.getElementById('UserSyncWatchlistShows').checked = settings.syncWatchlistShows === true;
         document.getElementById('UserIgnoreCollected').checked = settings.ignoreCollected !== false;
@@ -328,6 +341,8 @@ function saveUserTraktSettings(userGuid) {
         syncMovieRecommendations: document.getElementById('UserSyncMovieRecommendations').checked,
         syncShowRecommendations: document.getElementById('UserSyncShowRecommendations').checked,
         syncNextSeasons: document.getElementById('UserSyncNextSeasons').checked,
+        nextSeasonsRecentOnly: document.getElementById('UserNextSeasonsRecentOnly').checked,
+        nextSeasonsRecentDays: parseInt(document.getElementById('UserNextSeasonsRecentDays').value, 10) || 90,
         syncWatchlistMovies: document.getElementById('UserSyncWatchlistMovies').checked,
         syncWatchlistShows: document.getElementById('UserSyncWatchlistShows').checked,
         ignoreCollected: document.getElementById('UserIgnoreCollected').checked,

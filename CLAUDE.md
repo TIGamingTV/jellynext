@@ -197,7 +197,7 @@ Background: Plugin.PollingTasks[userGuid] = TraktApi.PollForTokenAsync()
 
 ### Per-User Architecture
 - Each user has own Trakt OAuth token (stored in `PluginConfiguration.TraktUsers[]`)
-- Per-user sync settings: `SyncMovieRecommendations`, `SyncShowRecommendations`, `SyncNextSeasons`, `SyncWatchlistMovies`, `SyncWatchlistShows`, `IgnoreCollected`, `IgnoreWatchlisted`, `LimitShowsToSeasonOne`, `MovieRecommendationsLimit`, `ShowRecommendationsLimit`, `LastHistorySyncTimestamp` (all in `TraktUser` model)
+- Per-user sync settings: `SyncMovieRecommendations`, `SyncShowRecommendations`, `SyncNextSeasons`, `SyncWatchlistMovies`, `SyncWatchlistShows`, `IgnoreCollected`, `IgnoreWatchlisted`, `LimitShowsToSeasonOne`, `NextSeasonsRecentOnly`, `NextSeasonsRecentDays`, `MovieRecommendationsLimit`, `ShowRecommendationsLimit`, `LastHistorySyncTimestamp` (all in `TraktUser` model)
 - Watchlist tracking: `ProcessedWatchlistMovieIds` (TMDB IDs), `ProcessedWatchlistShowIds` (TVDB IDs) - persisted to avoid re-adding same items
 - Recommendation limits: User-configurable 1-100 (default: 50), validated with `Math.Clamp()` on save
 - Virtual libraries filtered by userId extracted from path
@@ -266,6 +266,7 @@ Implement `IContentProvider` + register in `PluginServiceRegistrator` → automa
 - **Cache-only reads**: Retrieves watched progress + season metadata entirely from ShowsCacheService (no duplicate API calls)
 - **Dynamic fetching**: If next season not in cache for ongoing shows, fetches latest from Trakt API via `GetShowSeasons()` and checks season count
 - **Library deduplication**: Uses LocalLibraryService to exclude shows already in Jellyfin library (TVDB ID matching)
+- **New-release filter** (opt-in, per user: `NextSeasonsRecentOnly` + `NextSeasonsRecentDays`, default off/90 days): without it the library answers "what haven't I finished" - the next season of a show that ended a decade ago ranks equal to one that premiered last week. With it, a season qualifies if it premiered inside the window, or if it is part-way through airing (`AiredEpisodes < EpisodeCount`) on a show that has not ended, which covers long and split-cour seasons whose premiere falls outside the window. A season with no `FirstAired` is excluded - the filter is meant to exclude by default. Filtering happens at read time in `NextSeasonsProvider`, never in `ShowsCacheService`, since the season cache is global and the setting is per user
 
 ### Watchlist Sync (Auto-Download)
 - **Purpose**: Automatically adds watchlisted movies/shows from Trakt to download systems (Radarr/Sonarr/Jellyseerr)
