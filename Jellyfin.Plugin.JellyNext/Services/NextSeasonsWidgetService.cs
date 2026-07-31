@@ -35,6 +35,15 @@ public class NextSeasonsWidgetService
     /// </summary>
     private static readonly TimeSpan PosterMissCacheDuration = TimeSpan.FromHours(12);
 
+    /// <summary>
+    /// Library image types in the order the widget wants them: 16:9 first, poster only as a last
+    /// resort, since the cards are the same shape as Jellyfin's own home screen rows.
+    /// </summary>
+    private static readonly ImageType[] WideImageTypes =
+    {
+        ImageType.Thumb, ImageType.Backdrop, ImageType.Primary
+    };
+
     private readonly ILogger<NextSeasonsWidgetService> _logger;
     private readonly ContentCacheService _cacheService;
     private readonly LocalLibraryService _localLibraryService;
@@ -150,11 +159,11 @@ public class NextSeasonsWidgetService
     }
 
     /// <summary>
-    /// Resolves the poster of a show for the widget, falling back to Trakt's artwork.
+    /// Resolves a show's artwork on Trakt, for shows the Jellyfin library has no image for.
     /// </summary>
     /// <param name="traktId">The Trakt show ID.</param>
     /// <returns>An absolute image URL, or null when no artwork is available.</returns>
-    public async Task<string?> GetTraktPosterUrlAsync(int traktId)
+    public async Task<string?> GetTraktImageUrlAsync(int traktId)
     {
         if (_posterCache.TryGetValue(traktId, out var cached) && !cached.IsExpired)
         {
@@ -176,12 +185,12 @@ public class NextSeasonsWidgetService
         string? url = null;
         try
         {
-            url = await _traktApi.GetShowPosterUrl(traktUser, traktId);
+            url = await _traktApi.GetShowImageUrl(traktUser, traktId);
         }
         catch (Exception ex)
         {
-            // A missing poster is cosmetic; the widget falls back to a plain tile.
-            _logger.LogDebug(ex, "Could not load a poster for Trakt show {TraktId}", traktId);
+            // Missing artwork is cosmetic; the widget falls back to a plain tile.
+            _logger.LogDebug(ex, "Could not load artwork for Trakt show {TraktId}", traktId);
         }
 
         _posterCache[traktId] = new CachedPoster
@@ -199,9 +208,13 @@ public class NextSeasonsWidgetService
     }
 
     /// <summary>
-    /// Prefers the poster Jellyfin already holds for the series - the show itself is normally in the
+    /// Prefers the artwork Jellyfin already holds for the series - the show itself is normally in the
     /// library, since the user watched an earlier season - and only falls back to Trakt.
     /// </summary>
+    /// <remarks>
+    /// Wide images first: the widget draws the same 16:9 cards Jellyfin's own home screen rows use, so
+    /// a portrait poster only gets picked when the show has nothing else, and is cropped to fit.
+    /// </remarks>
     private string? GetImagePath(ContentItem item)
     {
         if (item.TvdbId.HasValue && item.TvdbId.Value != 0)
@@ -209,16 +222,22 @@ public class NextSeasonsWidgetService
             try
             {
                 var series = _localLibraryService.FindSeriesByTvdbId(item.TvdbId.Value);
-                if (series != null && series.HasImage(ImageType.Primary, 0))
+                if (series != null)
                 {
-                    return string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"Items/{series.Id:N}/Images/Primary?fillHeight=330&fillWidth=220&quality=90");
+                    foreach (var imageType in WideImageTypes)
+                    {
+                        if (series.HasImage(imageType, 0))
+                        {
+                            return string.Create(
+                                CultureInfo.InvariantCulture,
+                                $"Items/{series.Id:N}/Images/{imageType}?fillWidth=560&fillHeight=315&quality=90");
+                        }
+                    }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Could not resolve a library poster for {Title}", item.Title);
+                _logger.LogDebug(ex, "Could not resolve library artwork for {Title}", item.Title);
             }
         }
 

@@ -691,16 +691,18 @@ public class TraktApi
     }
 
     /// <summary>
-    /// Gets the poster URL of a show.
+    /// Gets the artwork URL of a show, preferring wide (16:9) images over the poster.
     /// </summary>
     /// <param name="traktUser">The Trakt user configuration.</param>
     /// <param name="traktId">The Trakt show ID.</param>
-    /// <returns>An absolute poster URL, or null when Trakt returned no artwork.</returns>
+    /// <returns>An absolute image URL, or null when Trakt returned no artwork.</returns>
     /// <remarks>
-    /// Only used as a fallback for shows the Jellyfin library has no poster for, so a show that
-    /// carries no artwork on Trakt is a normal outcome rather than an error.
+    /// Wide artwork first because the widget draws the same 16:9 cards the home screen's own rows
+    /// use; a poster would be cropped to fit. Only used as a fallback for shows the Jellyfin library
+    /// has no image for, so a show that carries no artwork on Trakt is a normal outcome rather than
+    /// an error.
     /// </remarks>
-    public async Task<string?> GetShowPosterUrl(TraktUser traktUser, int traktId)
+    public async Task<string?> GetShowImageUrl(TraktUser traktUser, int traktId)
     {
         using var httpClient = await CreateTraktClient(traktUser);
         var response = await httpClient.GetAsync($"/shows/{traktId}?extended=images");
@@ -727,7 +729,9 @@ public class TraktApi
             return null;
         }
 
-        var url = show?.Images?.Poster.FirstOrDefault() ?? show?.Images?.Thumb.FirstOrDefault();
+        var url = show?.Images?.Fanart.FirstOrDefault()
+            ?? show?.Images?.Thumb.FirstOrDefault()
+            ?? show?.Images?.Poster.FirstOrDefault();
         if (string.IsNullOrWhiteSpace(url))
         {
             return null;

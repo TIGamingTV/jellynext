@@ -13,14 +13,20 @@ namespace Jellyfin.Plugin.JellyNext.Models.Trakt;
 public class TraktImages
 {
     /// <summary>
-    /// Gets or sets the poster URLs, highest quality first.
+    /// Gets or sets the 16:9 backdrop URLs, highest quality first.
     /// </summary>
-    [JsonPropertyName("poster")]
-    public string[] Poster { get; set; } = Array.Empty<string>();
+    [JsonPropertyName("fanart")]
+    public string[] Fanart { get; set; } = Array.Empty<string>();
 
     /// <summary>
-    /// Gets or sets the thumbnail URLs, used when no poster is available.
+    /// Gets or sets the 16:9 thumbnail URLs.
     /// </summary>
     [JsonPropertyName("thumb")]
     public string[] Thumb { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Gets or sets the poster URLs, used only when no wide artwork exists.
+    /// </summary>
+    [JsonPropertyName("poster")]
+    public string[] Poster { get; set; } = Array.Empty<string>();
 }

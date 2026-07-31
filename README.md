@@ -119,7 +119,8 @@ Features:
 
 ### 🖥️ New Seasons Widget (Web Interface)
 - **Request Without Playing Anything**: An opt-in row on the Jellyfin home screen listing the shows you have a new season of, each with a **Request** button
-- **Poster, Name, Year, Episodes**: Artwork comes from your own library where the show is already in it, and from Trakt otherwise
+- **Looks Like the Rest of the Home Screen**: Drawn with Jellyfin's own cards, so it matches Continue Watching and Next Up in size, shape and alignment
+- **Artwork, Name, Season, Year, Episodes**: Images come from your own library where the show is already in it, and from Trakt otherwise
 - **Same Content as the Library**: Shows exactly what your Next Seasons library holds, including your "New Release Window" filter — no extra Trakt requests
 - **Any Download Integration**: Requests go through whichever backend is configured (Radarr/Sonarr, Jellyseerr or a webhook), attributed to the user who pressed the button
 
@@ -450,7 +451,7 @@ Notifications are sent as part of the "Sync Trakt Content" scheduled task, so th
 Go to **Dashboard → Plugins → JellyNext → Widget tab**.
 
 1. Tick **Enable the New Seasons Widget**
-2. Optionally change the **Widget Heading**, how many **Shows to List** (1-50, default: 12) and the **Position** (above or below Jellyfin's own home screen sections)
+2. Optionally change the **Widget Heading**, how many **Shows to List** (1-50, default: 12) and the **Position** (default: below Jellyfin's own home screen sections, so the row does not push Continue Watching down the screen)
 3. **Save**, then reload the web interface with Ctrl+F5
 
 Each user sees their own new seasons, so the widget only has content for users with **Sync Next Seasons** enabled on the Trakt tab.
@@ -525,15 +526,18 @@ When enabled, the Jellyfin home screen gains a row of the shows you have an unwa
   watched, already aired, and not already in Jellyfin — most recently premiered first, capped at the
   configured number of shows. If you turned on the per-user "Recently Released Seasons Only" filter,
   the widget respects it too.
-- **What a card shows**: the poster, the season number, the show's name and year, and the season's
-  episode count (a season that is still airing reads "6 of 12 episodes").
+- **What a card shows**: the artwork, a season badge, the show's name, and the season, year and
+  episode count (a season that is still airing reads "4 of 12 episodes"). Cards are built from
+  Jellyfin's own card markup, so the row is the same size, shape and alignment as the home screen's
+  other rows in whatever theme and window size you use.
 - **Pressing Request**: sends that season to whichever download integration is configured, exactly as
   playing the stub in the virtual library does, attributed to the user who pressed it. The button then
   reads "Requested" and stays that way until the season shows up in your library and the item
   disappears from the list.
-- **Posters**: taken from your Jellyfin library when the show is already in it — which is usually the
-  case, since you watched an earlier season — and from Trakt otherwise. A show with no artwork
-  anywhere gets a plain tile with its initial.
+- **Artwork**: the show's thumbnail or backdrop from your Jellyfin library when the show is already
+  in it — which is usually the case, since you watched an earlier season — falling back to its
+  poster, and to Trakt's artwork for shows you don't have. A show with no artwork anywhere gets a
+  plain tile with its initial.
 - **Cost**: none in Trakt requests. The widget reads the content the sync already cached.
 
 **To enable**: **Dashboard → Plugins → JellyNext → Widget tab**, then reload the web interface with
@@ -881,11 +885,16 @@ Contributions are welcome! Please:
 - Native client apps (Android TV, iOS, Roku, Kodi) cannot load plugin scripts. The widget is a web
   interface feature; those clients keep using the virtual library
 
-**"The widget shows placeholder tiles instead of posters"**
-- Posters come from your Jellyfin library first. A show that is in your library but has no artwork
-  yet gets one after Jellyfin's next metadata refresh
-- For shows not in your library, artwork comes from Trakt, which does not have a poster for every
+**"The widget shows placeholder tiles instead of artwork"**
+- Images come from your Jellyfin library first (thumbnail, then backdrop, then poster). A show that
+  is in your library but has no artwork yet gets one after Jellyfin's next metadata refresh
+- For shows not in your library, artwork comes from Trakt, which does not have an image for every
   title. A missing one is not an error
+
+**"The widget's cards don't match the other rows"**
+- The cards are drawn with the web client's own card classes, so this only happens on a Jellyfin
+  version that renamed them. The widget then falls back to its own layout, which is tidy but not an
+  exact match — worth reporting if you see it
 
 **"Request says it failed"**
 - The widget uses the same download integration as playback, so the cause is the same: check the

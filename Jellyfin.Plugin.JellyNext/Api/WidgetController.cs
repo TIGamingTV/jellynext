@@ -143,7 +143,7 @@ public class WidgetController : ControllerBase
             return NotFound();
         }
 
-        var url = await _widgetService.GetTraktPosterUrlAsync(traktId);
+        var url = await _widgetService.GetTraktImageUrlAsync(traktId);
         if (string.IsNullOrEmpty(url))
         {
             return NotFound();
