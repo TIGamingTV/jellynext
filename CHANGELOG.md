@@ -12,9 +12,17 @@
   - Sent announcements are recorded in the plugin configuration, so a restart does not repeat them and a season airing over several months is not announced twice. Records are dropped after 400 days. A failed send records nothing and is retried on the next sync
   - Sends over SMTP with STARTTLS or unencrypted. Implicit SSL (port 465) is not supported — a mail library cannot be added without also shipping copies of Jellyfin's own assemblies, which would break plugin loading. Providers offering 465 practically always offer 587
 
+### Bug Fixes
+
+- **Saving the configuration page always failed** with `The JSON value could not be converted to TraktAuthMode`, so no setting made on the page was ever persisted
+  - Jellyfin serializes enums as their member name, so the saved configuration comes back as `"Standalone"` rather than `0`. Assigning that to the authorization mode dropdown, whose options are numeric, matched nothing and silently blanked the selection. The blank was then saved back as `NaN`, which serializes to `null`, and the server rejects `null` for a non-nullable enum — failing the entire request, including every unrelated setting in it
+  - The mode is now normalized from either form on load and can never be posted as `NaN`. The Downloads tab already handled the string form, which is why its integration mode was unaffected
+  - Number fields that feed non-nullable settings (cache expiration, playback stop delay, recommendation limits) fall back to their defaults instead of posting `null` when left empty, which failed the same way
+
 ### Improvements
 
 - **One definition of "newly released season"**: the rule behind the per-user library filter moved into `SeasonReleaseHelper`, shared with the notifications, so the library and the emails cannot drift apart on what counts as new
+- **The test email says what to do when SMTP looks unconfigured**: the message now points out that sending uses the saved settings, so unsaved changes on screen do not count
 
 ## v1.5.1.0
 

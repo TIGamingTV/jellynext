@@ -63,7 +63,8 @@ public class EmailService
         if (!IsConfigured(config))
         {
             throw new InvalidOperationException(
-                "SMTP is not configured. Set a server, port and sender address on the Notifications tab.");
+                "SMTP is not configured. Set a server, port and sender address on the Notifications tab, "
+                + "then save the configuration - sending uses the saved settings, not what is on screen.");
         }
 
         using var client = new SmtpClient(config.SmtpHost, config.SmtpPort)

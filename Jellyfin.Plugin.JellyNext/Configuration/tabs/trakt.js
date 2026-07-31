@@ -26,13 +26,32 @@ function initTraktTab() {
     console.log('Trakt tab initialized');
 }
 
+// Jellyfin serializes enums as their member name ("Standalone"), not as a number, so a saved
+// configuration comes back as a string the numeric <option> values never match. Assigning it to the
+// select silently blanks the selection, and the blank then saved back as NaN -> null, which the
+// server rejects for a non-nullable enum - failing every save made from this page.
+function normalizeAuthMode(value) {
+    var names = {
+        Standalone: TRAKT_AUTH_MODE.STANDALONE,
+        SharedTraktPluginToken: TRAKT_AUTH_MODE.SHARED_TOKEN,
+        SharedClientId: TRAKT_AUTH_MODE.SHARED_CLIENT_ID
+    };
+
+    if (typeof value === 'string' && names[value] !== undefined) {
+        return names[value];
+    }
+
+    var parsed = parseInt(value, 10);
+    return isNaN(parsed) ? TRAKT_AUTH_MODE.STANDALONE : parsed;
+}
+
 function getSelectedAuthMode() {
     var selector = document.getElementById('TraktAuthMode');
-    return selector ? parseInt(selector.value, 10) : TRAKT_AUTH_MODE.STANDALONE;
+    return selector ? normalizeAuthMode(selector.value) : TRAKT_AUTH_MODE.STANDALONE;
 }
 
 function loadTraktSettings(config) {
-    document.getElementById('TraktAuthMode').value = config.TraktAuthMode || 0;
+    document.getElementById('TraktAuthMode').value = normalizeAuthMode(config.TraktAuthMode);
     document.getElementById('AllowSharedTokenRefresh').checked = config.AllowSharedTokenRefresh !== false;
     onAuthModeChanged();
 }
@@ -361,8 +380,8 @@ function saveUserTraktSettings(userGuid) {
         ignoreCollected: document.getElementById('UserIgnoreCollected').checked,
         ignoreWatchlisted: document.getElementById('UserIgnoreWatchlisted').checked,
         limitShowsToSeasonOne: document.getElementById('UserLimitShowsToSeasonOne').checked,
-        movieRecommendationsLimit: parseInt(document.getElementById('UserMovieRecommendationsLimit').value, 10),
-        showRecommendationsLimit: parseInt(document.getElementById('UserShowRecommendationsLimit').value, 10),
+        movieRecommendationsLimit: parseInt(document.getElementById('UserMovieRecommendationsLimit').value, 10) || 50,
+        showRecommendationsLimit: parseInt(document.getElementById('UserShowRecommendationsLimit').value, 10) || 50,
         notifyNewSeasonsByEmail: document.getElementById('UserNotifyNewSeasonsByEmail').checked,
         notificationEmail: document.getElementById('UserNotificationEmail').value
     };
