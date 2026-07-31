@@ -78,6 +78,16 @@ public class NextSeasonWidgetItem
     public string? ImagePath { get; set; }
 
     /// <summary>
+    /// Gets or sets the API path to try when <see cref="ImagePath"/> fails to load.
+    /// </summary>
+    /// <remarks>
+    /// Set when the library holds artwork for the show but Trakt could stand in for it, so a stale
+    /// or removed library image falls back to something rather than to a blank tile.
+    /// </remarks>
+    [JsonPropertyName("fallbackImagePath")]
+    public string? FallbackImagePath { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether this season has already been requested from the widget
     /// since the server started.
     /// </summary>

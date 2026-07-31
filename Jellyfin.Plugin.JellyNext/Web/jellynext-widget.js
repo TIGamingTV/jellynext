@@ -41,7 +41,10 @@
         '.jellynextImage { display: flex; align-items: center; justify-content: center;',
         '    background: rgba(127,127,127,.22); }',
         '.jellynextImage img { width: 100%; height: 100%; object-fit: cover; display: block; }',
-        '.jellynextInitial { font-size: 2.6em; font-weight: 600; opacity: .55; }',
+        '.jellynextImage img.jellynextContain { object-fit: contain; }',
+        '.jellynextPlaceholder { padding: .6em; font-size: 1em; font-weight: 600; opacity: .6;',
+        '    text-align: center; line-height: 1.25; overflow: hidden; display: -webkit-box;',
+        '    -webkit-line-clamp: 3; -webkit-box-orient: vertical; }',
         '.jellynextImage .jellynextBadge { position: absolute; top: .4em; left: .4em; z-index: 1;',
         '    padding: .15em .45em; border-radius: .3em; background: rgba(0,0,0,.72); color: #fff;',
         '    font-size: .8em; font-weight: 600; }',
@@ -185,29 +188,49 @@
         return parts.join(' · ');
     }
 
-    function buildInitial(item) {
-        var initial = document.createElement('span');
-        initial.className = 'jellynextInitial';
-        initial.textContent = (item.title || '?').charAt(0).toUpperCase();
-        return initial;
+    /**
+     * Shown when neither the library nor Trakt has artwork. The show's name reads better than an
+     * initial: a tile saying "T" tells nobody which show it is.
+     */
+    function buildPlaceholder(item) {
+        var placeholder = document.createElement('span');
+        placeholder.className = 'jellynextPlaceholder';
+        placeholder.textContent = item.title || '';
+        return placeholder;
     }
 
     function buildImage(item) {
         var container = document.createElement('div');
         container.className = 'cardImageContainer coveredImage cardContent jellynextImage';
 
-        if (item.imagePath) {
+        var sources = [item.imagePath, item.fallbackImagePath].filter(Boolean);
+
+        if (sources.length) {
+            var attempt = 0;
             var image = document.createElement('img');
             image.loading = 'lazy';
             image.alt = '';
-            image.src = ApiClient.getUrl(item.imagePath);
-            image.addEventListener('error', function () {
-                image.remove();
-                container.insertBefore(buildInitial(item), container.firstChild);
+            image.addEventListener('load', function () {
+                // A poster in a 16:9 card would be cropped down to a strip of itself, so portrait
+                // artwork is shown whole instead of filling the card.
+                if (image.naturalHeight > image.naturalWidth * 1.1) {
+                    image.classList.add('jellynextContain');
+                }
             });
+            image.addEventListener('error', function () {
+                attempt += 1;
+                if (attempt < sources.length) {
+                    image.src = ApiClient.getUrl(sources[attempt]);
+                    return;
+                }
+
+                image.remove();
+                container.insertBefore(buildPlaceholder(item), container.firstChild);
+            });
+            image.src = ApiClient.getUrl(sources[0]);
             container.appendChild(image);
         } else {
-            container.appendChild(buildInitial(item));
+            container.appendChild(buildPlaceholder(item));
         }
 
         var badge = document.createElement('span');

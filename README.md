@@ -534,10 +534,11 @@ When enabled, the Jellyfin home screen gains a row of the shows you have an unwa
   playing the stub in the virtual library does, attributed to the user who pressed it. The button then
   reads "Requested" and stays that way until the season shows up in your library and the item
   disappears from the list.
-- **Artwork**: the show's thumbnail or backdrop from your Jellyfin library when the show is already
+- **Artwork**: the show's backdrop or thumbnail from your Jellyfin library when the show is already
   in it — which is usually the case, since you watched an earlier season — falling back to its
-  poster, and to Trakt's artwork for shows you don't have. A show with no artwork anywhere gets a
-  plain tile with its initial.
+  poster, and to Trakt's artwork for shows you don't have. Shows are matched to your library on
+  TVDB, TMDB or IMDB ID. A poster is shown whole rather than cropped into the wide card, and a show
+  with no artwork anywhere gets a plain tile with its name on it.
 - **Cost**: none in Trakt requests. The widget reads the content the sync already cached.
 
 **To enable**: **Dashboard → Plugins → JellyNext → Widget tab**, then reload the web interface with
@@ -885,11 +886,12 @@ Contributions are welcome! Please:
 - Native client apps (Android TV, iOS, Roku, Kodi) cannot load plugin scripts. The widget is a web
   interface feature; those clients keep using the virtual library
 
-**"The widget shows placeholder tiles instead of artwork"**
-- Images come from your Jellyfin library first (thumbnail, then backdrop, then poster). A show that
+**"The widget shows plain tiles with the show's name instead of artwork"**
+- Images come from your Jellyfin library first (backdrop, then thumbnail, then poster). A show that
   is in your library but has no artwork yet gets one after Jellyfin's next metadata refresh
 - For shows not in your library, artwork comes from Trakt, which does not have an image for every
-  title. A missing one is not an error
+  title. A missing one is not an error — the log says `No artwork available for Trakt show ...`
+  once per show when this happens
 
 **"The widget's cards don't match the other rows"**
 - The cards are drawn with the web client's own card classes, so this only happens on a Jellyfin
