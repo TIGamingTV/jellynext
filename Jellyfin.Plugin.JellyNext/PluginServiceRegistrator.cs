@@ -26,6 +26,8 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<SonarrService>();
         serviceCollection.AddSingleton<JellyseerrService>();
         serviceCollection.AddSingleton<LocalLibraryService>();
+        serviceCollection.AddSingleton<EmailService>();
+        serviceCollection.AddSingleton<NewSeasonNotificationService>();
 
         // Download providers
         serviceCollection.AddSingleton<NativeDownloadProvider>();

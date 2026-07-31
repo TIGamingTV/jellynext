@@ -259,7 +259,9 @@ public class TraktController : ControllerBase
             ignoreWatchlisted = traktUser.IgnoreWatchlisted,
             limitShowsToSeasonOne = traktUser.LimitShowsToSeasonOne,
             movieRecommendationsLimit = traktUser.MovieRecommendationsLimit,
-            showRecommendationsLimit = traktUser.ShowRecommendationsLimit
+            showRecommendationsLimit = traktUser.ShowRecommendationsLimit,
+            notifyNewSeasonsByEmail = traktUser.NotifyNewSeasonsByEmail,
+            notificationEmail = traktUser.NotificationEmail
         });
     }
 
@@ -293,6 +295,8 @@ public class TraktController : ControllerBase
         traktUser.LimitShowsToSeasonOne = settings.LimitShowsToSeasonOne;
         traktUser.MovieRecommendationsLimit = Math.Clamp(settings.MovieRecommendationsLimit, 1, 100);
         traktUser.ShowRecommendationsLimit = Math.Clamp(settings.ShowRecommendationsLimit, 1, 100);
+        traktUser.NotifyNewSeasonsByEmail = settings.NotifyNewSeasonsByEmail;
+        traktUser.NotificationEmail = (settings.NotificationEmail ?? string.Empty).Trim();
 
         Plugin.Instance?.SaveConfiguration();
 
@@ -365,5 +369,15 @@ public class TraktController : ControllerBase
         /// Gets or sets a value indicating whether to automatically add watchlisted shows to download system.
         /// </summary>
         public bool SyncWatchlistShows { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether to email this user when a new season is released.
+        /// </summary>
+        public bool NotifyNewSeasonsByEmail { get; set; }
+
+        /// <summary>
+        /// Gets or sets the address new season notifications are sent to.
+        /// </summary>
+        public string? NotificationEmail { get; set; }
     }
 }

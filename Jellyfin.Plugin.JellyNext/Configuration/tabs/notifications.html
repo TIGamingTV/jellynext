@@ -1,0 +1,112 @@
+<!-- New Season Email Notifications -->
+<div class="verticalSection">
+    <h3 class="sectionTitle">New Season Emails</h3>
+    <div class="fieldDescription" style="margin-bottom: 1em;">
+        Emails a user when a new season of a show they watch is released. A season is announced once,
+        when it first appears in that user's Next Seasons library and has premiered recently or is
+        still airing — progressing through an old show does not trigger an email.
+        Requires "Sync Next Seasons" for the user, and an email address on the Trakt tab.
+        Notifications are sent as part of the "Sync Trakt Content" scheduled task.
+    </div>
+
+    <div class="checkboxContainer checkboxContainer-withDescription">
+        <label>
+            <input is="emby-checkbox" type="checkbox" id="EmailNotificationsEnabled" />
+            <span>Enable New Season Email Notifications</span>
+        </label>
+        <div class="fieldDescription checkboxFieldDescription">
+            Master switch. Each user also opts in individually on the Trakt tab. Default: disabled.
+        </div>
+    </div>
+
+    <div class="inputContainer">
+        <label class="inputLabel inputLabelUnfocused" for="NewSeasonNotificationWindowDays">Announce Seasons Released Within (days):</label>
+        <input is="emby-input" type="number" id="NewSeasonNotificationWindowDays" name="NewSeasonNotificationWindowDays" min="1" max="365" />
+        <div class="fieldDescription">
+            How recently a season must have premiered to be announced (1-365, default: 30). A season
+            part-way through airing is always announced. This is separate from the per-user
+            "New Release Window" that filters the library itself.
+        </div>
+    </div>
+</div>
+
+<!-- SMTP Server -->
+<div class="verticalSection">
+    <h3 class="sectionTitle">SMTP Server</h3>
+
+    <div class="inputContainer">
+        <label class="inputLabel inputLabelUnfocused" for="SmtpHost">SMTP Server:</label>
+        <input is="emby-input" type="text" id="SmtpHost" name="SmtpHost" placeholder="smtp.example.com" />
+        <div class="fieldDescription">
+            Host name of the mail server that sends the notifications.
+        </div>
+    </div>
+
+    <div class="inputContainer">
+        <label class="inputLabel inputLabelUnfocused" for="SmtpPort">SMTP Port:</label>
+        <input is="emby-input" type="number" id="SmtpPort" name="SmtpPort" min="1" max="65535" />
+        <div class="fieldDescription">
+            Usually 587 (STARTTLS) or 25 (unencrypted). Port 465 (implicit SSL) is <strong>not</strong>
+            supported — use the provider's 587 endpoint instead.
+        </div>
+    </div>
+
+    <div class="checkboxContainer checkboxContainer-withDescription">
+        <label>
+            <input is="emby-checkbox" type="checkbox" id="SmtpUseStartTls" />
+            <span>Use STARTTLS</span>
+        </label>
+        <div class="fieldDescription checkboxFieldDescription">
+            Upgrades the connection to TLS after connecting. Leave enabled unless the server is a local
+            relay without encryption. Default: enabled.
+        </div>
+    </div>
+
+    <div class="inputContainer">
+        <label class="inputLabel inputLabelUnfocused" for="SmtpUsername">Username:</label>
+        <input is="emby-input" type="text" id="SmtpUsername" name="SmtpUsername" autocomplete="off" />
+        <div class="fieldDescription">
+            Leave empty to send without authentication.
+        </div>
+    </div>
+
+    <div class="inputContainer">
+        <label class="inputLabel inputLabelUnfocused" for="SmtpPassword">Password:</label>
+        <input is="emby-input" type="password" id="SmtpPassword" name="SmtpPassword" autocomplete="new-password" />
+        <div class="fieldDescription">
+            Stored in the plugin configuration in plain text, like every other credential Jellyfin
+            plugins hold. Use a provider app password rather than your account password.
+        </div>
+    </div>
+
+    <div class="inputContainer">
+        <label class="inputLabel inputLabelUnfocused" for="SmtpFromAddress">From Address:</label>
+        <input is="emby-input" type="text" id="SmtpFromAddress" name="SmtpFromAddress" placeholder="jellynext@example.com" />
+        <div class="fieldDescription">
+            The sender address. Many providers require this to match the authenticated account.
+        </div>
+    </div>
+
+    <div class="inputContainer">
+        <label class="inputLabel inputLabelUnfocused" for="SmtpFromName">From Name:</label>
+        <input is="emby-input" type="text" id="SmtpFromName" name="SmtpFromName" />
+        <div class="fieldDescription">
+            Display name shown as the sender (default: JellyNext).
+        </div>
+    </div>
+
+    <div class="inputContainer">
+        <label class="inputLabel inputLabelUnfocused" for="TestEmailRecipient">Test Recipient:</label>
+        <input is="emby-input" type="text" id="TestEmailRecipient" name="TestEmailRecipient" placeholder="you@example.com" />
+        <div class="fieldDescription">
+            Sends a test message using the <strong>saved</strong> settings — save the configuration
+            first if you have just changed them.
+        </div>
+    </div>
+
+    <div style="margin-top: 1em;">
+        <button is="emby-button" type="button" id="SendTestEmailBtn" class="raised">
+            <span>Send Test Email</span>
+        </button>
+    </div>
+</div>

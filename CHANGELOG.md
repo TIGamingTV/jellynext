@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.7.0.0
+
+### Features
+
+- **New season email notifications** (opt-in, per user): emails a user when a new season of a show they watch is released
+  - New **Notifications** tab holds the SMTP settings and a **Send Test Email** button; each user then ticks **Email Me About New Seasons** on the Trakt tab and gives an address, since Jellyfin accounts have no email address of their own
+  - Announcements ride on the Next Seasons sync, so a season is only announced under the conditions that put it in the user's library: it is the next season they have not watched, it has aired, and it is not already in Jellyfin. No extra Trakt requests are made
+  - Only genuine releases are announced. A next season also appears whenever watch progress moves, so finishing a show that ended years ago would otherwise send mail about a decade-old season; a season qualifies only if it premiered inside `NewSeasonNotificationWindowDays` (default 30) or is part-way through airing. That window is separate from the per-user "New Release Window" that filters the library itself
+  - Everything found in one sync goes out as a single digest listing each show, season and premiere date, in plain text and HTML
+  - Sent announcements are recorded in the plugin configuration, so a restart does not repeat them and a season airing over several months is not announced twice. Records are dropped after 400 days. A failed send records nothing and is retried on the next sync
+  - Sends over SMTP with STARTTLS or unencrypted. Implicit SSL (port 465) is not supported — a mail library cannot be added without also shipping copies of Jellyfin's own assemblies, which would break plugin loading. Providers offering 465 practically always offer 587
+
+### Improvements
+
+- **One definition of "newly released season"**: the rule behind the per-user library filter moved into `SeasonReleaseHelper`, shared with the notifications, so the library and the emails cannot drift apart on what counts as new
+
 ## v1.5.1.0
 
 ### Bug Fixes

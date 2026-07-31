@@ -137,6 +137,24 @@
                     </div>
                 </div>
 
+                <h4 class="sectionTitle" style="font-size: 1em; margin-top: 1.5em;">New Season Notifications</h4>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label>
+                        <input is="emby-checkbox" type="checkbox" id="UserNotifyNewSeasonsByEmail" />
+                        <span>Email Me About New Seasons</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        Send this user an email when a new season of a show they watch is released. Requires "Sync Next Seasons" above, and SMTP settings on the Notifications tab.
+                    </div>
+                </div>
+                <div class="inputContainer" id="UserNotificationEmailContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="UserNotificationEmail">Email Address:</label>
+                    <input is="emby-input" type="text" id="UserNotificationEmail" name="UserNotificationEmail" placeholder="user@example.com" />
+                    <div class="fieldDescription">
+                        Where this user's new season notifications are sent. Jellyfin accounts have no email address of their own, so it is set here.
+                    </div>
+                </div>
+
                 <h4 class="sectionTitle" style="font-size: 1em; margin-top: 1.5em;">Recommendation Limits</h4>
                 <div class="inputContainer">
                     <label class="inputLabel inputLabelUnfocused" for="UserMovieRecommendationsLimit">Movie Recommendations Limit:</label>
