@@ -30,4 +30,10 @@ public class TraktShowSummary
     /// </summary>
     [JsonPropertyName("ids")]
     public TraktIds Ids { get; set; } = new TraktIds();
+
+    /// <summary>
+    /// Gets or sets the artwork URLs, only present when <c>extended=images</c> was requested.
+    /// </summary>
+    [JsonPropertyName("images")]
+    public TraktImages? Images { get; set; }
 }

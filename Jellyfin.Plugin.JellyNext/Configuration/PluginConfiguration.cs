@@ -291,6 +291,31 @@ public class PluginConfiguration : BasePluginConfiguration
     public int NewSeasonNotificationWindowDays { get; set; } = 30;
 
     /// <summary>
+    /// Gets or sets a value indicating whether the New Seasons home screen widget is served and
+    /// injected into the Jellyfin web client.
+    /// </summary>
+    /// <remarks>
+    /// Opt-in because enabling it edits the web client's <c>index.html</c> to load the widget script.
+    /// Turning it off removes that script tag again.
+    /// </remarks>
+    public bool NextSeasonsWidgetEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets the number of shows the widget lists (1-50).
+    /// </summary>
+    public int NextSeasonsWidgetLimit { get; set; } = 12;
+
+    /// <summary>
+    /// Gets or sets the heading shown above the widget.
+    /// </summary>
+    public string NextSeasonsWidgetTitle { get; set; } = "New Seasons";
+
+    /// <summary>
+    /// Gets or sets where the widget is placed among the home screen sections.
+    /// </summary>
+    public WidgetPosition NextSeasonsWidgetPosition { get; set; } = WidgetPosition.Top;
+
+    /// <summary>
     /// Gets or sets the OAuth application identity JellyNext presents to Trakt.
     /// Defaults to <see cref="TraktAuthMode.Standalone"/> so existing installations keep working.
     /// </summary>

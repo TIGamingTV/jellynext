@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.9.0.0
+
+### Features
+
+- **New Seasons home screen widget** (opt-in): a row on the Jellyfin home screen listing the shows the signed-in user has a new season of, each with a **Request** button
+  - Answers the same question the Next Seasons virtual library does without the playback workaround it depends on. Playing a stub file to trigger a download only exists because third-party clients offer nothing better; in the web interface a button is simply a button
+  - Each card shows the poster, season number, show name, year and the season's episode count — a season still airing reads "6 of 12 episodes"
+  - Posters come from the Jellyfin library when the show is already in it, which it usually is since the user watched an earlier season, and from Trakt otherwise. Shows with no artwork anywhere get a plain tile rather than a broken image
+  - Requests go through whichever download integration is configured (Radarr/Sonarr, Jellyseerr or a webhook), attributed to the user who pressed the button — the same path playback takes
+  - Reads the content the Next Seasons sync already cached, so the widget and the library can never disagree about what counts as a new season, the per-user "Recently Released Seasons Only" filter applies to both, and the widget costs no additional Trakt requests
+  - New **Widget** tab configures the heading, how many shows the row holds (1-50, default 12) and whether it sits above or below Jellyfin's own home screen sections
+  - Jellyfin has no supported way for a plugin to add code to the web interface, so enabling the widget adds one script tag to the web client's `index.html`. The tag is rewritten on every start, because a server upgrade replaces that file, and removed again when the setting is switched off. A read-only web directory means the widget does not appear and a warning is logged; nothing else is affected
+  - The web interface only. Native client apps cannot load plugin scripts, so they keep using the virtual library, which is unchanged
+
 ## v1.7.0.0
 
 ### Features

@@ -117,6 +117,12 @@ Features:
 - **Genuinely New Only**: A season qualifies if it premiered inside the notification window or is still airing — finishing an old show does not produce an email
 - **Per-User Opt-In**: Each user enables notifications and sets their own address (Jellyfin accounts have no email address of their own)
 
+### 🖥️ New Seasons Widget (Web Interface)
+- **Request Without Playing Anything**: An opt-in row on the Jellyfin home screen listing the shows you have a new season of, each with a **Request** button
+- **Poster, Name, Year, Episodes**: Artwork comes from your own library where the show is already in it, and from Trakt otherwise
+- **Same Content as the Library**: Shows exactly what your Next Seasons library holds, including your "New Release Window" filter — no extra Trakt requests
+- **Any Download Integration**: Requests go through whichever backend is configured (Radarr/Sonarr, Jellyseerr or a webhook), attributed to the user who pressed the button
+
 ### 🎨 Native Jellyfin Integration
 - **Standard Metadata**: Uses Jellyfin's built-in TMDB/TVDB metadata providers (no separate API key needed)
 - **Native Resolution**: Virtual libraries use standard .strm file naming conventions (`[tmdbid-X]`, `[tvdbid-X]`)
@@ -439,6 +445,27 @@ Go to **Dashboard → Plugins → JellyNext → Notifications tab**.
 
 Notifications are sent as part of the "Sync Trakt Content" scheduled task, so they arrive at most once per sync interval (default: every 6 hours).
 
+### Step 6: Enable the New Seasons Widget (Optional)
+
+Go to **Dashboard → Plugins → JellyNext → Widget tab**.
+
+1. Tick **Enable the New Seasons Widget**
+2. Optionally change the **Widget Heading**, how many **Shows to List** (1-50, default: 12) and the **Position** (above or below Jellyfin's own home screen sections)
+3. **Save**, then reload the web interface with Ctrl+F5
+
+Each user sees their own new seasons, so the widget only has content for users with **Sync Next Seasons** enabled on the Trakt tab.
+
+**How it gets there**: Jellyfin has no supported way for a plugin to add code to the web interface, so
+enabling the widget adds one `<script>` tag to the web client's `index.html`, the same approach other
+plugins that render outside the dashboard use. The tag is rewritten on every server start (a Jellyfin
+upgrade replaces that file) and removed again the moment the setting is switched off. Jellyfin needs
+write access to its web directory — if it doesn't have it, the widget simply doesn't appear and a
+warning is written to the log.
+
+**Where it works**: the web interface, and anything that embeds it (the desktop apps, a browser on
+your phone or TV). Native client apps — Android TV, iOS, Roku, Kodi — cannot load plugin scripts, so
+those keep using the virtual library, where playing an item still triggers the request.
+
 ## Usage
 
 ### Understanding Virtual Libraries
@@ -489,6 +516,31 @@ When enabled, JellyNext emails a user as new seasons of the shows they watch are
 **To enable**: configure SMTP on the **Notifications** tab, then tick **"Email Me About New Seasons"** for each user on the **Trakt** tab.
 
 **Note**: this needs **Sync Next Seasons** enabled for the user — the notifications are driven by that library's content.
+
+### The New Seasons Widget
+
+When enabled, the Jellyfin home screen gains a row of the shows you have an unwatched new season of:
+
+- **What it lists**: exactly what your Next Seasons library holds — the next season you haven't
+  watched, already aired, and not already in Jellyfin — most recently premiered first, capped at the
+  configured number of shows. If you turned on the per-user "Recently Released Seasons Only" filter,
+  the widget respects it too.
+- **What a card shows**: the poster, the season number, the show's name and year, and the season's
+  episode count (a season that is still airing reads "6 of 12 episodes").
+- **Pressing Request**: sends that season to whichever download integration is configured, exactly as
+  playing the stub in the virtual library does, attributed to the user who pressed it. The button then
+  reads "Requested" and stays that way until the season shows up in your library and the item
+  disappears from the list.
+- **Posters**: taken from your Jellyfin library when the show is already in it — which is usually the
+  case, since you watched an earlier season — and from Trakt otherwise. A show with no artwork
+  anywhere gets a plain tile with its initial.
+- **Cost**: none in Trakt requests. The widget reads the content the sync already cached.
+
+**To enable**: **Dashboard → Plugins → JellyNext → Widget tab**, then reload the web interface with
+Ctrl+F5.
+
+**Note**: the widget and the virtual library show the same thing and can be used together — the
+library remains the only option on native client apps, which cannot load plugin scripts.
 
 ### Downloading Content
 
@@ -651,6 +703,8 @@ Jellyfin.Plugin.JellyNext/
 │   ├── RadarrController.cs       # Radarr connection testing, profiles (native mode)
 │   ├── SonarrController.cs       # Sonarr connection testing, profiles (native mode)
 │   ├── NotificationsController.cs  # Test email endpoint
+│   ├── WidgetController.cs       # New Seasons widget contents, requests, posters
+│   ├── ClientScriptController.cs # Serves the widget script to the web client
 │   └── JellyNextLibraryController.cs  # Query cached content
 ├── Configuration/                # Plugin settings
 │   ├── PluginConfiguration.cs   # Settings model (persisted)
@@ -671,6 +725,8 @@ Jellyfin.Plugin.JellyNext/
 ├── Resources/                    # Embedded resources
 │   ├── dummy.mp4                 # 1-hour FFprobe-compatible video (prevents "watched")
 │   └── dummy_short.mp4           # 2-second video (auto-stops playback)
+├── Web/                          # Client side code served to the web interface
+│   └── jellynext-widget.js       # New Seasons home screen widget
 ├── ScheduledTasks/               # Background tasks
 │   └── ContentSyncScheduledTask.cs  # Periodic sync (6hr default)
 ├── Services/                     # Business logic
@@ -681,6 +737,8 @@ Jellyfin.Plugin.JellyNext/
 │   ├── LocalLibraryService.cs    # Jellyfin library queries
 │   ├── EmailService.cs           # SMTP sender
 │   ├── NewSeasonNotificationService.cs  # New season email digests
+│   ├── NextSeasonsWidgetService.cs  # Backs the home screen widget (contents, requests, posters)
+│   ├── WebScriptInjector.cs      # Adds/removes the widget script tag in the web client
 │   ├── PlaybackInterceptor.cs    # Detects virtual playback, routes to download provider
 │   ├── JellyseerrService.cs      # Jellyseerr API client (user import, requests)
 │   ├── RadarrService.cs          # Radarr API client (native mode)
@@ -731,6 +789,11 @@ Jellyfin.Plugin.JellyNext/
    - Detects virtual library paths via regex
    - Routes to selected download provider
    - Clears playback state to prevent "watched" marking
+
+6. **Home Screen Widget**: Requesting without the playback workaround
+   - Reads the cached Next Seasons content, so it never disagrees with the virtual library and costs no API calls
+   - Requests go through the same `IDownloadProvider` the playback interceptor uses
+   - Delivered by injecting a script tag into the web client's `index.html`, since Jellyfin offers no plugin hook for the interface; the tag is rewritten on start and removed when the feature is switched off
 
 ### Contributing
 
@@ -805,6 +868,28 @@ Contributions are welcome! Please:
 - Increase "Cache Expiration (hours)" to reduce sync frequency
 - Increase "Ended Shows Cache (days)" to cache completed shows longer
 - Enable "Limit Shows to Season 1" to reduce stub file creation time
+
+### New Seasons Widget Issues
+
+**"The widget doesn't appear on the home screen"**
+- Reload the web interface with Ctrl+F5 — the browser caches `index.html` and the script
+- Check the Jellyfin log for `Could not update the web client's index.html`: Jellyfin needs write
+  access to its web directory. Docker images that mount the web root read-only, and distribution
+  packages that install it as root while Jellyfin runs as another user, both hit this
+- The widget hides itself when the user has nothing new. Confirm their **Next Seasons** library has
+  content — the widget shows exactly the same items
+- Native client apps (Android TV, iOS, Roku, Kodi) cannot load plugin scripts. The widget is a web
+  interface feature; those clients keep using the virtual library
+
+**"The widget shows placeholder tiles instead of posters"**
+- Posters come from your Jellyfin library first. A show that is in your library but has no artwork
+  yet gets one after Jellyfin's next metadata refresh
+- For shows not in your library, artwork comes from Trakt, which does not have a poster for every
+  title. A missing one is not an error
+
+**"Request says it failed"**
+- The widget uses the same download integration as playback, so the cause is the same: check the
+  Downloads tab configuration and the Jellyfin log for the response from Radarr/Sonarr/Jellyseerr
 
 ### Download Issues
 

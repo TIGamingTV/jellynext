@@ -57,6 +57,17 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public ConcurrentDictionary<Guid, Task<bool>> PollingTasks { get; }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Takes the widget's script tag back out of the web client, which would otherwise be left
+    /// pointing at an endpoint this plugin no longer serves.
+    /// </remarks>
+    public override void OnUninstalling()
+    {
+        WebScriptInjector.RemoveScriptTag(ApplicationPaths.WebPath);
+        base.OnUninstalling();
+    }
+
+    /// <inheritdoc />
     public IEnumerable<PluginPageInfo> GetPages()
     {
         return new[]

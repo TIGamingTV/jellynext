@@ -2,8 +2,8 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
-    <AssemblyVersion>1.8.0.0</AssemblyVersion>
-    <FileVersion>1.8.0.0</FileVersion>
+    <AssemblyVersion>1.9.0.0</AssemblyVersion>
+    <FileVersion>1.9.0.0</FileVersion>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
@@ -27,6 +27,8 @@
     <EmbeddedResource Include="Configuration\**\*.html" />
     <None Remove="Resources\**\*.mp4" />
     <EmbeddedResource Include="Resources\**\*.mp4" />
+    <None Remove="Web\**\*.js" />
+    <EmbeddedResource Include="Web\**\*.js" />
   </ItemGroup>
 
 </Project>
