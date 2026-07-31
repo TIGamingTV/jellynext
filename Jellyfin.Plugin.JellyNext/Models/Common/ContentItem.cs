@@ -68,6 +68,16 @@ public class ContentItem
     public DateTime? SeasonFirstAired { get; set; }
 
     /// <summary>
+    /// Gets or sets the total number of episodes <see cref="SeasonNumber"/> will have, if known.
+    /// </summary>
+    public int? SeasonEpisodeCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of episodes of <see cref="SeasonNumber"/> that have aired, if known.
+    /// </summary>
+    public int? SeasonAiredEpisodes { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether <see cref="SeasonNumber"/> is part-way through airing.
     /// </summary>
     /// <remarks>

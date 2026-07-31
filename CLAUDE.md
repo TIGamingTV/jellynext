@@ -33,17 +33,18 @@ Jellyfin plugin integrating Trakt-powered discovery with per-user virtual librar
 ### Directory Structure
 ```
 Jellyfin.Plugin.JellyNext/
-├── Api/                    # REST API Controllers (Trakt, Radarr, Sonarr, Jellyseerr, JellyNextLibrary, Config, Notifications)
+├── Api/                    # REST API Controllers (Trakt, Radarr, Sonarr, Jellyseerr, JellyNextLibrary, Config, Notifications, Widget, ClientScript)
 ├── Configuration/          # Plugin settings (PluginConfiguration.cs, configPage.html, tabs/)
 ├── Helpers/                # Utilities (UserHelper.cs, SeasonReleaseHelper.cs)
 ├── Models/                 # Data models organized by service
-│   ├── Common/             # ContentItem, ContentType, ShowCacheEntry, SeasonMetadata, DownloadResult, NotifiedSeason
+│   ├── Common/             # ContentItem, ContentType, ShowCacheEntry, SeasonMetadata, DownloadResult, NotifiedSeason, NextSeasonWidgetItem
 │   ├── Jellyseerr/         # MediaRequest, JellyseerrUser, RadarrServer, SonarrServer, etc.
 │   ├── Radarr/             # Movie, QualityProfile, RootFolder, etc.
 │   ├── Sonarr/             # Series, Season, QualityProfile, etc.
 │   └── Trakt/              # TraktUser, TraktMovie, TraktShow, TraktIds, TraktEpisode, TraktHistoryItem, etc.
 ├── Providers/              # Content provider implementations (IContentProvider)
 ├── Resources/              # Embedded resources (dummy.mp4)
+├── Web/                    # Client side code served to the web interface (jellynext-widget.js)
 ├── ScheduledTasks/         # Background tasks (ContentSyncScheduledTask.cs)
 ├── Services/                   # Business logic (TraktApi, ContentSync, WatchlistSync, Radarr/Sonarr, Jellyseerr, Email, NewSeasonNotification, etc.)
 │   └── DownloadProviders/  # IDownloadProvider, NativeDownloadProvider, JellyseerrDownloadProvider, WebhookDownloadProvider
@@ -90,6 +91,8 @@ Plugin Entry → API Controllers → Services → Providers → Virtual Library 
 - `JellyNextLibraryController.cs`: Query cached content (recommendations, next seasons)
 - `ConfigController.cs`: Serves modular tab HTML/JS from embedded resources (no auth required - page already admin-only)
 - `NotificationsController.cs`: Sends a test email using the *saved* SMTP configuration
+- `WidgetController.cs`: New Seasons widget contents, season requests and poster redirects. The only controller that authorizes ordinary users (`[Authorize]`) and answers per caller - the user comes from `IAuthorizationContext`, never from a route parameter
+- `ClientScriptController.cs`: Serves `Web/jellynext-widget.js`. Anonymous by necessity: the tag sits in `index.html` and is fetched before anyone signs in
 
 **Services** (`/Services/`):
 - `TraktApi.cs`: Trakt API client (OAuth, recommendations, trending, watchlist, watched shows, seasons, watch history with auto-pagination). `CreateTraktClient()` is the single choke point for every authenticated call - mode-aware client id and token resolution live there.
@@ -103,6 +106,8 @@ Plugin Entry → API Controllers → Services → Providers → Virtual Library 
 - `SonarrService.cs`: Sonarr API client (series search/add, per-season monitoring, anime detection) - native integration only
 - `EmailService.cs`: SMTP sender (framework `SmtpClient`; STARTTLS only - see "New Season Email Notifications" below)
 - `NewSeasonNotificationService.cs`: Emails per-user digests of newly released seasons, driven by freshly synced Next Seasons content
+- `NextSeasonsWidgetService.cs`: Backs the home screen widget - what to list for a user, requesting a season, resolving posters
+- `WebScriptInjector.cs`: IHostedService adding/removing the widget's script tag in the web client's `index.html`
 - `LocalLibraryService.cs`: Jellyfin library queries (find series by TVDB ID, check movie existence by TMDB ID, exclude virtual items)
 - `PlaybackInterceptor.cs`: IHostedService detecting virtual item playback, uses DownloadProviderFactory to route requests
 - `DownloadProviderFactory.cs`: Factory selecting NativeDownloadProvider, JellyseerrDownloadProvider, or WebhookDownloadProvider based on config
@@ -126,7 +131,7 @@ Plugin Entry → API Controllers → Services → Providers → Virtual Library 
 **Configuration**:
 - `Configuration/PluginConfiguration.cs`: Persisted settings (Radarr/Sonarr config, TraktUsers[], cache expiration). Profile IDs are nullable `int?` to support optional configs.
 - `Configuration/configPage.html`: Main shell (317 lines) with inline shared utilities. Loads tab content via `ConfigController` endpoints.
-- `Configuration/tabs/`: Modular tab files (general.html/js, trakt.html/js, trending.html/js, downloads.html/js, notifications.html/js) served as embedded resources
+- `Configuration/tabs/`: Modular tab files (general.html/js, trakt.html/js, trending.html/js, downloads.html/js, notifications.html/js, widget.html/js) served as embedded resources
 - `Helpers/UserHelper.cs`: Retrieves per-user Trakt config from PluginConfiguration
 - `Helpers/SeasonReleaseHelper.cs`: The single definition of "this season is a new release", shared by the per-user library filter and new-season notifications
 
@@ -227,12 +232,13 @@ Use `Plugin.Instance?.Configuration` not `Plugin.Instance?.PluginConfiguration` 
 - **`TraktAuthenticationException`**: signals "skip this cycle", not "no content". `ContentSyncService` catches it and leaves the cache untouched - overwriting with an empty list would tear down the user's virtual library on a transient token problem. Rethrown past the generic `catch (Exception)` handlers in providers/`ShowsCacheService`/`WatchlistSyncService`.
 
 ### Configuration Page Architecture
-- **Modular tabs**: Each tab isolated in `Configuration/tabs/{name}.html` + `{name}.js` (general, trakt, trending, downloads, notifications)
+- **Modular tabs**: Each tab isolated in `Configuration/tabs/{name}.html` + `{name}.js` (general, trakt, trending, downloads, notifications, widget)
 - **Dynamic loading**: Main page fetches tabs via `ConfigController` (`GET /JellyNext/Config/Tab/{name}` and `/js`) using `ApiClient.getUrl()`
 - **Eager loading**: All tabs loaded on pageshow, populated after users dropdown is ready (avoids race conditions)
 - **Load order critical**: Load tabs → Load config → Load users → Populate UI (ensures dropdowns ready before setting values)
 - **Tab functions**: Each exports `init{Tab}Tab()`, `load{Tab}Settings(config)`, `save{Tab}Settings(config)`
 - **Nullable fields**: Radarr/Sonarr profile IDs are `int?` - validate empty strings before `parseInt()` to avoid `NaN`
+- **Enum dropdowns**: Jellyfin serializes enums as their member name, so a saved value arrives as `"Top"` while `<option>` values are numeric. Normalize both forms on load (see `normalizeAuthMode` / `normalizeWidgetPosition`) or the select silently blanks and saves back as `null`, failing the entire configuration update
 
 ### Content Provider System
 Implement `IContentProvider` + register in `PluginServiceRegistrator` → automatic sync/caching/error isolation
@@ -283,6 +289,16 @@ Implement `IContentProvider` + register in `PluginServiceRegistrator` → automa
 - **A failed send records nothing**, so the same seasons are retried next cycle. Recording + `SaveConfiguration()` is serialized behind a semaphore because users sync in parallel and share one configuration object
 - **STARTTLS only, no implicit SSL (port 465)**: `EmailService` uses the framework's `System.Net.Mail.SmtpClient`, which cannot do implicit TLS. MailKit is *not* an option: pulling in any NuGet dependency requires `CopyLocalLockFileAssemblies`, which would also copy the `MediaBrowser.*` assemblies into the plugin output - they must resolve from the host's default `AssemblyLoadContext` (see "Shared Trakt Connection"), so shipping copies would break plugin loading and the Trakt bridge
 - **Encodings are set explicitly to UTF-8** on subject, body and alternate view: left unset, `MailMessage` falls back to us-ascii and silently turns every accented or non-Latin character in a show title into `?`
+
+### New Seasons Home Screen Widget
+- **Purpose**: request a new season from a button instead of by playing a stub file. The virtual library exists because third-party clients offer no other affordance; in the web interface that indirection is unnecessary, so the widget is the direct route. Both coexist - the library is still the only option on native client apps, which cannot load plugin scripts
+- **Reads the `nextseasons` content cache, never Trakt**: the widget shows exactly what the virtual library holds, so the two cannot drift apart on what counts as a new season, the per-user `NextSeasonsRecentOnly` filter applies to both for free, and the widget adds no API calls. It is therefore also as stale as the last sync, which is the intended trade
+- **Delivered by editing `index.html`** (`WebScriptInjector`): Jellyfin has no plugin hook for the web interface. The tag carries `data-jellynext-widget` so it can be found and replaced; every apply strips first, which makes it idempotent, keeps a version upgrade from stacking tags, and makes disabling a clean removal. Rewritten on every start because a server upgrade replaces the file. A read-only web root is logged as a warning and otherwise ignored - the feature degrades to "not shown", never to a failed startup
+- **`WidgetController` is the only per-user controller**: the caller comes from `IAuthorizationContext`, never from a route parameter, so one user cannot read or request from another's content. `Poster/{traktId}` is deliberately anonymous - browsers do not attach Jellyfin's token to `img` requests - and only ever redirects to public artwork
+- **Posters come from the Jellyfin library first**: the show itself is normally present (the user watched an earlier season); only the *season* is missing. Trakt's `extended=images` is the fallback, cached in memory, with misses cached too so a show without artwork is not looked up on every render
+- **Requested state is in-memory** (`NextSeasonsWidgetService`), matching the watchlist rule and for the same reason: the durable answer to "do I have this season" is the library, re-checked by the next sync. Persisting it would leave a button stuck on "Requested" after a failed download
+- **`ContentItem.SeasonEpisodeCount` / `SeasonAiredEpisodes`**: stamped by `NextSeasonsProvider` for the same reason as `SeasonFirstAired` - the season being offered is often absent from `ShowsCacheService`, since an ongoing show's incomplete season is fetched on demand and deliberately not cached
+- **Widget JSON is pinned to camelCase** with `[JsonPropertyName]`: Jellyfin serializes member names as written, so without it the payload would mix the plugin's PascalCase models with the controller's lowercase anonymous objects
 
 ### Watchlist Sync (Auto-Download)
 - **Purpose**: Automatically adds watchlisted movies/shows from Trakt to download systems (Radarr/Sonarr/Jellyseerr)

@@ -276,6 +276,8 @@ public class NextSeasonsProvider : IContentProvider
                 ProviderName = ProviderName,
                 SeasonNumber = nextSeasonNumber,
                 SeasonFirstAired = cachedSeason.FirstAired,
+                SeasonEpisodeCount = cachedSeason.EpisodeCount,
+                SeasonAiredEpisodes = cachedSeason.AiredEpisodes,
                 SeasonIsAiring = SeasonReleaseHelper.IsAiring(cachedShow, cachedSeason),
                 Genres = cachedShow.Genres
             },

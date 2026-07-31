@@ -1,0 +1,53 @@
+<!-- New Seasons Home Screen Widget -->
+<div class="verticalSection">
+    <h3 class="sectionTitle">New Seasons Widget</h3>
+    <div class="fieldDescription" style="margin-bottom: 1em;">
+        Adds a row to the Jellyfin home screen listing the shows the signed-in user has a new season
+        of, each with a <strong>Request</strong> button that sends the season to the download
+        integration configured on the Downloads tab. It shows the same seasons as that user's
+        Next Seasons library — including their "New Release Window" filter — so no extra Trakt
+        requests are made, and it needs <strong>Sync Next Seasons</strong> enabled for the user.
+    </div>
+
+    <div class="checkboxContainer checkboxContainer-withDescription">
+        <label>
+            <input is="emby-checkbox" type="checkbox" id="NextSeasonsWidgetEnabled" />
+            <span>Enable the New Seasons Widget</span>
+        </label>
+        <div class="fieldDescription checkboxFieldDescription">
+            Jellyfin has no supported way for a plugin to add code to the web interface, so enabling
+            this adds a script tag to the web client's <code>index.html</code>. Turning it off removes
+            the tag again. Jellyfin needs write access to its web directory; if it does not have it,
+            the widget silently does not appear and a warning is written to the log. Reload the web
+            page (Ctrl+F5) after changing this. Default: disabled.
+        </div>
+    </div>
+
+    <div class="inputContainer">
+        <label class="inputLabel inputLabelUnfocused" for="NextSeasonsWidgetTitle">Widget Heading:</label>
+        <input is="emby-input" type="text" id="NextSeasonsWidgetTitle" name="NextSeasonsWidgetTitle" />
+        <div class="fieldDescription">
+            The heading shown above the row (default: New Seasons).
+        </div>
+    </div>
+
+    <div class="inputContainer">
+        <label class="inputLabel inputLabelUnfocused" for="NextSeasonsWidgetLimit">Shows to List:</label>
+        <input is="emby-input" type="number" id="NextSeasonsWidgetLimit" name="NextSeasonsWidgetLimit" min="1" max="50" />
+        <div class="fieldDescription">
+            How many shows the row holds, most recently premiered season first (1-50, default: 12).
+            The row scrolls sideways, so a larger number is not wider — it is just further to scroll.
+        </div>
+    </div>
+
+    <div class="selectContainer">
+        <label class="selectLabel" for="NextSeasonsWidgetPosition">Position:</label>
+        <select is="emby-select" id="NextSeasonsWidgetPosition" name="NextSeasonsWidgetPosition" class="emby-select-withcolor emby-select">
+            <option value="0">Above the other home screen sections</option>
+            <option value="1">Below the other home screen sections</option>
+        </select>
+        <div class="fieldDescription">
+            Where the row sits among Jellyfin's own home screen sections.
+        </div>
+    </div>
+</div>

@@ -691,6 +691,53 @@ public class TraktApi
     }
 
     /// <summary>
+    /// Gets the poster URL of a show.
+    /// </summary>
+    /// <param name="traktUser">The Trakt user configuration.</param>
+    /// <param name="traktId">The Trakt show ID.</param>
+    /// <returns>An absolute poster URL, or null when Trakt returned no artwork.</returns>
+    /// <remarks>
+    /// Only used as a fallback for shows the Jellyfin library has no poster for, so a show that
+    /// carries no artwork on Trakt is a normal outcome rather than an error.
+    /// </remarks>
+    public async Task<string?> GetShowPosterUrl(TraktUser traktUser, int traktId)
+    {
+        using var httpClient = await CreateTraktClient(traktUser);
+        var response = await httpClient.GetAsync($"/shows/{traktId}?extended=images");
+
+        if (!response.IsSuccessStatusCode)
+        {
+            ThrowIfUnauthorized(response, "show images");
+
+            _logger.LogDebug(
+                "Failed to get images for Trakt show {TraktId}: Status={Status}",
+                traktId,
+                response.StatusCode);
+            return null;
+        }
+
+        TraktShowSummary? show;
+        try
+        {
+            show = await response.Content.ReadFromJsonAsync<TraktShowSummary>(_jsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogDebug(ex, "Failed to deserialize images for Trakt show {TraktId}", traktId);
+            return null;
+        }
+
+        var url = show?.Images?.Poster.FirstOrDefault() ?? show?.Images?.Thumb.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return null;
+        }
+
+        // Trakt returns protocol relative URLs.
+        return url.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? url : $"https://{url}";
+    }
+
+    /// <summary>
     /// Gets trending movies.
     /// </summary>
     /// <param name="traktUser">The Trakt user configuration (for auth).</param>

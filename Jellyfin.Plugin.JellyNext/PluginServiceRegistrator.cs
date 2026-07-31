@@ -28,6 +28,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<LocalLibraryService>();
         serviceCollection.AddSingleton<EmailService>();
         serviceCollection.AddSingleton<NewSeasonNotificationService>();
+        serviceCollection.AddSingleton<NextSeasonsWidgetService>();
 
         // Download providers
         serviceCollection.AddSingleton<NativeDownloadProvider>();
@@ -50,5 +51,6 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 
         // Hosted services
         serviceCollection.AddHostedService<PlaybackInterceptor>();
+        serviceCollection.AddHostedService<WebScriptInjector>();
     }
 }
