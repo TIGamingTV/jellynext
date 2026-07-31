@@ -9,6 +9,16 @@
     "imageUrl": "https://raw.githubusercontent.com/TIGamingTV/jellynext/main/images/jellynext_logo.png",
     "versions": [
       {
+        "version": "1.6.0.0",
+        "changelog": "Release v1.6.0.0",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/jellynext/releases/download/v1.6.0.0/jellynext-v1.6.0.0.zip",
+        "checksum": "2bfb73c7c6a98f979df9ae01e0d72fdb",
+        "timestamp": "2026-07-31T00:12:02Z",
+        "repositoryName": "JellyNext",
+        "repositoryUrl": "https://github.com/TIGamingTV/jellynext"
+      },
+      {
         "version": "1.5.1.0",
         "changelog": "### Bug Fixes\n\n- **Watch progress never picked up seasons marked watched on Trakt**: Next Seasons kept suggesting a season the user had already finished, or nothing at all\n  - After the first run, progress was only advanced from `/sync/history/shows` between the last sync and now. That window only matches episodes whose `watched_at` falls inside it, and marking a whole season watched records it against the original air dates, so the history came back empty and progress stayed where it was (\"Found 0 history items\", \"0 next season recommendations\")\n  - The in-memory sync timestamp meant the only way out was restarting Jellyfin, which forced a full sync\n  - Progress is now read from `/sync/watched/shows`, Trakt's authoritative snapshot, on every run. The per-show season lookup - the expensive part - is still only paid for shows the cache has not seen or whose progress moved, so the steady-state request count is unchanged\n  - Progress is also set rather than merged with the previous value, so unmarking a season no longer pins a show to a season it is past\n  - Each show whose progress changes is logged (`Watch progress for X: S2 -> S4`), and the run reports how many shows are tracked, how many moved, and how many season lookups it made\n\n### Improvements\n\n- **Next Seasons reports why shows produced nothing**: an empty library previously gave no explanation at the default log level, since every skip was a debug-only message\n  - The run summary now counts each outcome — no aired next season, hidden by the new-release filter, already in the Jellyfin library — instead of only reporting how many suggestions were found\n  - When the new-release filter hides seasons, up to ten are named with their premiere date and the active window, which distinguishes \"correctly filtered old backlog\" from a window that is too narrow or metadata Trakt did not return",
         "targetAbi": "10.11.0.0",
