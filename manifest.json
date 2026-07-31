@@ -9,6 +9,16 @@
     "imageUrl": "https://raw.githubusercontent.com/TIGamingTV/jellynext/main/images/jellynext_logo.png",
     "versions": [
       {
+        "version": "1.7.0.0",
+        "changelog": "### Features\n\n- **New season email notifications** (opt-in, per user): emails a user when a new season of a show they watch is released\n  - New **Notifications** tab holds the SMTP settings and a **Send Test Email** button; each user then ticks **Email Me About New Seasons** on the Trakt tab and gives an address, since Jellyfin accounts have no email address of their own\n  - Announcements ride on the Next Seasons sync, so a season is only announced under the conditions that put it in the user's library: it is the next season they have not watched, it has aired, and it is not already in Jellyfin. No extra Trakt requests are made\n  - Only genuine releases are announced. A next season also appears whenever watch progress moves, so finishing a show that ended years ago would otherwise send mail about a decade-old season; a season qualifies only if it premiered inside `NewSeasonNotificationWindowDays` (default 30) or is part-way through airing. That window is separate from the per-user \"New Release Window\" that filters the library itself\n  - Everything found in one sync goes out as a single digest listing each show, season and premiere date, in plain text and HTML\n  - Sent announcements are recorded in the plugin configuration, so a restart does not repeat them and a season airing over several months is not announced twice. Records are dropped after 400 days. A failed send records nothing and is retried on the next sync\n  - Sends over SMTP with STARTTLS or unencrypted. Implicit SSL (port 465) is not supported — a mail library cannot be added without also shipping copies of Jellyfin's own assemblies, which would break plugin loading. Providers offering 465 practically always offer 587\n\n### Improvements\n\n- **One definition of \"newly released season\"**: the rule behind the per-user library filter moved into `SeasonReleaseHelper`, shared with the notifications, so the library and the emails cannot drift apart on what counts as new",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/jellynext/releases/download/v1.7.0.0/jellynext-v1.7.0.0.zip",
+        "checksum": "c00677dcc6e9454d37c3a9c780fdd282",
+        "timestamp": "2026-07-31T12:10:36Z",
+        "repositoryName": "JellyNext",
+        "repositoryUrl": "https://github.com/TIGamingTV/jellynext"
+      },
+      {
         "version": "1.6.0.0",
         "changelog": "Release v1.6.0.0",
         "targetAbi": "10.11.0.0",
