@@ -12,8 +12,11 @@ function loadGeneralSettings(config) {
     document.getElementById('PlaybackStopDelaySeconds').value = config.PlaybackStopDelaySeconds || 2;
 }
 
+// Defaults matter on save, not just on load: an empty number field parses to NaN, which serializes
+// to null, and the server rejects null for a non-nullable int - taking the whole save with it.
 function saveGeneralSettings(config) {
-    config.CacheExpirationHours = parseInt(document.getElementById('CacheExpirationHours').value, 10);
+    config.CacheExpirationHours = parseInt(document.getElementById('CacheExpirationHours').value, 10) || 6;
     config.UseShortDummyVideo = document.getElementById('UseShortDummyVideo').checked;
-    config.PlaybackStopDelaySeconds = parseInt(document.getElementById('PlaybackStopDelaySeconds').value, 10);
+    var stopDelay = parseInt(document.getElementById('PlaybackStopDelaySeconds').value, 10);
+    config.PlaybackStopDelaySeconds = isNaN(stopDelay) ? 2 : stopDelay;
 }
