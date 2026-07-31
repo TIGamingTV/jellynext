@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.9.1.0
+
+### Improvements
+
+- **The New Seasons widget now looks like a native home screen row.** It previously drew its own small cards, hard against the left edge of the page, which sat oddly next to Continue Watching and Next Up
+  - Cards are built from Jellyfin's own card markup, so they are the same size, shape (16:9) and alignment as the rows around them in whatever theme and viewport the user has. Reimplementing that means copying a stack of viewport media queries and getting it subtly wrong; if those classes ever disappear, a probe detects it and a self-contained fallback layout takes over
+  - Artwork follows suit: the show's thumbnail or backdrop from the Jellyfin library, falling back to its poster, and to Trakt's fanart for shows not in the library. Previously the poster was always used, which had to be cropped into a wide card
+  - The season is now named in the card text ("Season 2 · 2022 · 4 of 12 episodes") as well as shown as a badge on the artwork
+  - **The widget now sits below the other home screen sections by default.** A plugin's row pushing Continue Watching down the screen is a poor first impression of an opt-in feature. Existing installations keep whatever they have saved; the setting is on the Widget tab
+  - The row is put back in place when Jellyfin adds a section after it. Home sections load one at a time, so a row placed at the bottom could end up in the middle a moment later
+
 ## v1.9.0.0
 
 ### Features

@@ -313,7 +313,11 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>
     /// Gets or sets where the widget is placed among the home screen sections.
     /// </summary>
-    public WidgetPosition NextSeasonsWidgetPosition { get; set; } = WidgetPosition.Top;
+    /// <remarks>
+    /// Defaults to the bottom: a plugin's row pushing Continue Watching down the screen is a poor
+    /// first impression of an opt-in feature.
+    /// </remarks>
+    public WidgetPosition NextSeasonsWidgetPosition { get; set; } = WidgetPosition.Bottom;
 
     /// <summary>
     /// Gets or sets the OAuth application identity JellyNext presents to Trakt.

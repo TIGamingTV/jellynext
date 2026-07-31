@@ -7,8 +7,14 @@
  * is configured for.
  *
  * The web client rebuilds the home screen on every navigation and offers no extension point, so the
- * section is (re)inserted by watching the DOM. All rendering is self-contained: no Jellyfin CSS
- * classes or internal modules are relied on, since those change between releases.
+ * section is (re)inserted by watching the DOM.
+ *
+ * Cards are built from Jellyfin's own card markup (card / cardBox / cardScalable / cardPadder /
+ * cardImageContainer / cardText) so the row is the same size, shape and alignment as the home
+ * screen's own rows in whatever theme and viewport the user has - reimplementing that means copying
+ * a stack of viewport media queries and getting it subtly wrong. Only the request button and the
+ * season badge are styled here. If those classes ever stop existing, a probe detects it and a
+ * self-contained fallback stylesheet takes over.
  */
 (function () {
     'use strict';
@@ -16,6 +22,7 @@
     var ITEMS_ENDPOINT = 'JellyNext/Widget/NextSeasons';
     var REQUEST_ENDPOINT = 'JellyNext/Widget/Request';
     var SECTION_CLASS = 'jellynextSection';
+    var FALLBACK_CLASS = 'jellynextFallback';
     var STYLE_ID = 'jellynextWidgetStyles';
     var DATA_TTL_MS = 5 * 60 * 1000;
     var RESCAN_DELAY_MS = 300;
@@ -29,26 +36,36 @@
     };
 
     var STYLES = [
-        '.' + SECTION_CLASS + ' { margin: 0 0 1.6em; }',
-        '.jellynextHeader { display: flex; align-items: baseline; margin: .8em 0 .4em; padding: 0 .6em; }',
-        '.jellynextHeading { font-size: 1.3em; font-weight: 600; margin: 0; }',
-        '.jellynextRow { display: flex; gap: .9em; overflow-x: auto; padding: .3em .6em 1em; scrollbar-width: thin; }',
-        '.jellynextCard { flex: 0 0 auto; width: 9.6em; }',
-        '.jellynextPoster { position: relative; width: 100%; aspect-ratio: 2 / 3; min-height: 8em;',
-        '    border-radius: .5em; overflow: hidden; background: rgba(127,127,127,.22);',
-        '    display: flex; align-items: center; justify-content: center; }',
-        '.jellynextPoster img { width: 100%; height: 100%; object-fit: cover; }',
-        '.jellynextInitial { font-size: 2.4em; font-weight: 600; opacity: .55; }',
-        '.jellynextBadge { position: absolute; top: .4em; left: .4em; padding: .15em .45em;',
-        '    border-radius: .3em; background: rgba(0,0,0,.72); color: #fff; font-size: .75em; font-weight: 600; }',
-        '.jellynextName { margin-top: .45em; font-size: .95em; font-weight: 600;',
-        '    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }',
-        '.jellynextMeta { font-size: .8em; opacity: .7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }',
-        '.jellynextButton { margin-top: .5em; width: 100%; padding: .5em .2em; border: 0; border-radius: .3em;',
-        '    font-size: .85em; font-weight: 600; cursor: pointer; color: #fff;',
-        '    background: var(--accent, #00a4dc); font-family: inherit; }',
+        // Ours: the row itself, the artwork inside Jellyfin's image container, and the button.
+        '.jellynextRow { display: flex; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }',
+        '.jellynextImage { display: flex; align-items: center; justify-content: center;',
+        '    background: rgba(127,127,127,.22); }',
+        '.jellynextImage img { width: 100%; height: 100%; object-fit: cover; display: block; }',
+        '.jellynextInitial { font-size: 2.6em; font-weight: 600; opacity: .55; }',
+        '.jellynextImage .jellynextBadge { position: absolute; top: .4em; left: .4em; z-index: 1;',
+        '    padding: .15em .45em; border-radius: .3em; background: rgba(0,0,0,.72); color: #fff;',
+        '    font-size: .8em; font-weight: 600; }',
+        '.jellynextButton { display: block; width: 100%; margin-top: .5em; padding: .5em .2em;',
+        '    border: 0; border-radius: .3em; font-size: .85em; font-weight: 600; cursor: pointer;',
+        '    color: #fff; background: var(--accent, #00a4dc); font-family: inherit; }',
         '.jellynextButton:hover:not(:disabled) { filter: brightness(1.12); }',
-        '.jellynextButton:disabled { background: rgba(127,127,127,.3); color: inherit; opacity: .85; cursor: default; }'
+        '.jellynextButton:disabled { background: rgba(127,127,127,.3); color: inherit; opacity: .85;',
+        '    cursor: default; }',
+
+        // Only used when the web client's card stylesheet is not there to size the cards. Mirrors
+        // what those classes normally provide, so the widget degrades to a plain but tidy row.
+        '.' + FALLBACK_CLASS + ' .jellynextHeading { font-size: 1.3em; font-weight: 600;',
+        '    margin: .8em 0 .4em; padding: 0 .6em; }',
+        '.' + FALLBACK_CLASS + ' .jellynextRow { padding: 0 .6em 1em; }',
+        '.' + FALLBACK_CLASS + ' .jellynextCard { flex: 0 0 auto; width: 15em; }',
+        '.' + FALLBACK_CLASS + ' .cardBox { margin: .6em; }',
+        '.' + FALLBACK_CLASS + ' .cardScalable { position: relative; }',
+        '.' + FALLBACK_CLASS + ' .cardPadder { padding-bottom: 56.25%; }',
+        '.' + FALLBACK_CLASS + ' .cardImageContainer { position: absolute; top: 0; left: 0; right: 0;',
+        '    bottom: 0; overflow: hidden; border-radius: .2em; }',
+        '.' + FALLBACK_CLASS + ' .cardText { white-space: nowrap; overflow: hidden;',
+        '    text-overflow: ellipsis; padding: .06em 2px; }',
+        '.' + FALLBACK_CLASS + ' .cardText-secondary { font-size: 86%; opacity: .75; }'
     ].join('\n');
 
     function addStyles() {
@@ -60,6 +77,20 @@
         style.id = STYLE_ID;
         style.textContent = STYLES;
         document.head.appendChild(style);
+    }
+
+    /**
+     * Detects whether the web client's card stylesheet is present, by measuring a class whose only
+     * job is to give a card its aspect ratio.
+     */
+    function hasNativeCardStyles() {
+        var probe = document.createElement('div');
+        probe.className = 'cardPadder cardPadder-overflowBackdrop';
+        probe.style.cssText = 'position:absolute;visibility:hidden;width:100px;top:-1000px;';
+        document.body.appendChild(probe);
+        var padding = parseFloat(window.getComputedStyle(probe).paddingBottom) || 0;
+        probe.remove();
+        return padding > 0;
     }
 
     function isSignedIn() {
@@ -141,7 +172,7 @@
     }
 
     function metaText(item) {
-        var parts = [];
+        var parts = ['Season ' + item.seasonNumber];
         if (item.year) {
             parts.push(String(item.year));
         }
@@ -154,9 +185,16 @@
         return parts.join(' · ');
     }
 
-    function buildPoster(item) {
-        var poster = document.createElement('div');
-        poster.className = 'jellynextPoster';
+    function buildInitial(item) {
+        var initial = document.createElement('span');
+        initial.className = 'jellynextInitial';
+        initial.textContent = (item.title || '?').charAt(0).toUpperCase();
+        return initial;
+    }
+
+    function buildImage(item) {
+        var container = document.createElement('div');
+        container.className = 'cardImageContainer coveredImage cardContent jellynextImage';
 
         if (item.imagePath) {
             var image = document.createElement('img');
@@ -165,43 +203,47 @@
             image.src = ApiClient.getUrl(item.imagePath);
             image.addEventListener('error', function () {
                 image.remove();
-                poster.appendChild(buildInitial(item));
+                container.insertBefore(buildInitial(item), container.firstChild);
             });
-            poster.appendChild(image);
+            container.appendChild(image);
         } else {
-            poster.appendChild(buildInitial(item));
+            container.appendChild(buildInitial(item));
         }
 
         var badge = document.createElement('span');
         badge.className = 'jellynextBadge';
         badge.textContent = 'S' + item.seasonNumber;
-        poster.appendChild(badge);
+        container.appendChild(badge);
 
-        return poster;
-    }
-
-    function buildInitial(item) {
-        var initial = document.createElement('span');
-        initial.className = 'jellynextInitial';
-        initial.textContent = (item.title || '?').charAt(0).toUpperCase();
-        return initial;
+        return container;
     }
 
     function buildCard(item) {
         var card = document.createElement('div');
-        card.className = 'jellynextCard';
-        card.appendChild(buildPoster(item));
+        card.className = 'card overflowBackdropCard jellynextCard';
+
+        var box = document.createElement('div');
+        box.className = 'cardBox cardBox-bottompadded';
+
+        var scalable = document.createElement('div');
+        scalable.className = 'cardScalable';
+
+        var padder = document.createElement('div');
+        padder.className = 'cardPadder cardPadder-overflowBackdrop';
+        scalable.appendChild(padder);
+        scalable.appendChild(buildImage(item));
+        box.appendChild(scalable);
 
         var name = document.createElement('div');
-        name.className = 'jellynextName';
+        name.className = 'cardText cardText-first jellynextName';
         name.textContent = item.title;
         name.title = item.title;
-        card.appendChild(name);
+        box.appendChild(name);
 
         var meta = document.createElement('div');
-        meta.className = 'jellynextMeta';
+        meta.className = 'cardText cardText-secondary jellynextMeta';
         meta.textContent = metaText(item);
-        card.appendChild(meta);
+        box.appendChild(meta);
 
         var button = document.createElement('button');
         button.className = 'jellynextButton';
@@ -216,7 +258,8 @@
             });
         }
 
-        card.appendChild(button);
+        box.appendChild(button);
+        card.appendChild(box);
         return card;
     }
 
@@ -252,19 +295,19 @@
 
     function buildSection() {
         var section = document.createElement('div');
-        section.className = SECTION_CLASS + ' verticalSection';
+        section.className = 'verticalSection ' + SECTION_CLASS;
         section.style.display = 'none';
 
-        var header = document.createElement('div');
-        header.className = 'jellynextHeader';
+        if (!hasNativeCardStyles()) {
+            section.classList.add(FALLBACK_CLASS);
+        }
 
         var heading = document.createElement('h2');
-        heading.className = 'jellynextHeading sectionTitle';
-        header.appendChild(heading);
-        section.appendChild(header);
+        heading.className = 'sectionTitle sectionTitle-cards padded-left jellynextHeading';
+        section.appendChild(heading);
 
         var row = document.createElement('div');
-        row.className = 'jellynextRow';
+        row.className = 'itemsContainer scrollSlider focuscontainer-x padded-left padded-right jellynextRow';
         section.appendChild(row);
 
         return section;
@@ -298,6 +341,25 @@
         return document.querySelectorAll('#homeTab .sections, #indexPage .sections');
     }
 
+    function wantsBottom() {
+        return !!(state.data && state.data.position === 'Bottom');
+    }
+
+    /**
+     * Keeps the section at the requested end of the home screen. Sections are appended as their
+     * content loads, so a section placed at the bottom on insertion can end up in the middle a
+     * moment later; this runs on every scan until the order settles.
+     */
+    function place(container, section) {
+        if (wantsBottom()) {
+            if (container.lastElementChild !== section) {
+                container.appendChild(section);
+            }
+        } else if (container.firstElementChild !== section) {
+            container.insertBefore(section, container.firstElementChild);
+        }
+    }
+
     function ensureSections() {
         if (!isSignedIn()) {
             return;
@@ -310,18 +372,16 @@
 
         var added = [];
         Array.prototype.forEach.call(containers, function (container) {
-            if (container.querySelector('.' + SECTION_CLASS)) {
+            var section = container.querySelector('.' + SECTION_CLASS);
+            if (section) {
+                place(container, section);
                 return;
             }
 
             addStyles();
-            var section = buildSection();
-            if (state.data && state.data.position === 'Bottom') {
-                container.appendChild(section);
-            } else {
-                container.insertBefore(section, container.firstChild);
-            }
-
+            section = buildSection();
+            container.appendChild(section);
+            place(container, section);
             added.push(section);
         });
 
@@ -335,13 +395,11 @@
                     return;
                 }
 
-                // The placement setting is only known after the first fetch; move the section then.
-                if (data && data.position === 'Bottom' && section.parentNode
-                    && section.parentNode.lastChild !== section) {
-                    section.parentNode.appendChild(section);
-                }
-
                 fill(section, data);
+
+                if (section.parentNode) {
+                    place(section.parentNode, section);
+                }
             });
         });
     }

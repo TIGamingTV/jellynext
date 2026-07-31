@@ -19,7 +19,7 @@ function normalizeWidgetPosition(value) {
     }
 
     var parsed = parseInt(value, 10);
-    return isNaN(parsed) ? WIDGET_POSITION.TOP : parsed;
+    return isNaN(parsed) ? WIDGET_POSITION.BOTTOM : parsed;
 }
 
 function initWidgetTab() {
