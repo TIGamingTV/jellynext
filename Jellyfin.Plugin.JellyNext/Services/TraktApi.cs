@@ -729,9 +729,12 @@ public class TraktApi
             return null;
         }
 
+        // Fanart is the show's key art. Trakt's "thumb" is usually a scene still, which reads as a
+        // random episode rather than as the show, so the poster - badly shaped but unmistakable -
+        // comes first and the thumb is only a last resort.
         var url = show?.Images?.Fanart.FirstOrDefault()
-            ?? show?.Images?.Thumb.FirstOrDefault()
-            ?? show?.Images?.Poster.FirstOrDefault();
+            ?? show?.Images?.Poster.FirstOrDefault()
+            ?? show?.Images?.Thumb.FirstOrDefault();
         if (string.IsNullOrWhiteSpace(url))
         {
             return null;

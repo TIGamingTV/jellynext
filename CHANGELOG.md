@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.9.2.0
+
+### Bug Fixes
+
+- **Widget cards showed a blank tile or an episode still instead of the show's artwork**
+  - The library lookup only matched shows by their TVDB ID, so a show Jellyfin identified through a different provider — anime matched by TMDB is the common case — looked absent from the library, and its artwork was fetched from Trakt instead of taken from the images already on the server. Shows are now matched on TVDB, TMDB or IMDB
+  - Artwork preference is now Backdrop, then Thumb, then poster. Both of the first two are 16:9, but a series thumbnail is often a scene still that reads as "some episode" rather than as the show; a backdrop is always key art. On Trakt the same reasoning puts fanart first and its screenshot-style "thumb" last
+  - A poster is no longer cropped into a strip to fill a 16:9 card: portrait artwork is shown whole inside the card
+  - If the library image fails to load, the card now retries with Trakt's artwork before giving up
+  - When there is genuinely no artwork anywhere, the tile shows the show's name instead of the first letter of it, and the reason is written to the log once per show rather than left invisible
+
 ## v1.9.1.0
 
 ### Improvements

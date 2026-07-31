@@ -50,6 +50,54 @@ public class LocalLibraryService
     }
 
     /// <summary>
+    /// Finds a TV series in the local library by any of the IDs known for it.
+    /// </summary>
+    /// <param name="tvdbId">The TVDB ID, if known.</param>
+    /// <param name="tmdbId">The TMDB ID, if known.</param>
+    /// <param name="imdbId">The IMDB ID, if known.</param>
+    /// <returns>The series if found, null otherwise.</returns>
+    /// <remarks>
+    /// Matching on TVDB alone misses shows Jellyfin identified through a different provider - anime
+    /// matched by TMDB is the common case - which then look absent from the library even though the
+    /// user is watching them.
+    /// </remarks>
+    public Series? FindSeriesByAnyProviderId(int? tvdbId, int? tmdbId, string? imdbId)
+    {
+        var providerIds = new Dictionary<string, string>();
+
+        if (tvdbId.HasValue && tvdbId.Value != 0)
+        {
+            providerIds[MetadataProvider.Tvdb.ToString()] = tvdbId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        if (tmdbId.HasValue && tmdbId.Value != 0)
+        {
+            providerIds[MetadataProvider.Tmdb.ToString()] = tmdbId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        if (!string.IsNullOrEmpty(imdbId))
+        {
+            providerIds[MetadataProvider.Imdb.ToString()] = imdbId;
+        }
+
+        if (providerIds.Count == 0)
+        {
+            return null;
+        }
+
+        var items = _libraryManager.GetItemList(new InternalItemsQuery
+        {
+            IncludeItemTypes = new[] { BaseItemKind.Series },
+            HasAnyProviderId = providerIds,
+            Recursive = true
+        });
+
+        return items
+            .OfType<Series>()
+            .FirstOrDefault(s => !s.Path?.Contains("jellynext-virtual", StringComparison.OrdinalIgnoreCase) ?? true);
+    }
+
+    /// <summary>
     /// Finds a movie in the local library by TMDB ID.
     /// </summary>
     /// <param name="tmdbId">The TMDB ID.</param>

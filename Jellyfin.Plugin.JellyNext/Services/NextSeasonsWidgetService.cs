@@ -36,12 +36,16 @@ public class NextSeasonsWidgetService
     private static readonly TimeSpan PosterMissCacheDuration = TimeSpan.FromHours(12);
 
     /// <summary>
-    /// Library image types in the order the widget wants them: 16:9 first, poster only as a last
-    /// resort, since the cards are the same shape as Jellyfin's own home screen rows.
+    /// Library image types in the order the widget wants them.
     /// </summary>
-    private static readonly ImageType[] WideImageTypes =
+    /// <remarks>
+    /// Backdrop before Thumb: both are 16:9, but a series thumbnail is often a scene still that reads
+    /// as "some episode" rather than as the show, while a backdrop is always key art. The poster is
+    /// last - it fits the card badly, but a recognisable image beats a blank tile.
+    /// </remarks>
+    private static readonly ImageType[] PreferredImageTypes =
     {
-        ImageType.Thumb, ImageType.Backdrop, ImageType.Primary
+        ImageType.Backdrop, ImageType.Thumb, ImageType.Primary
     };
 
     private readonly ILogger<NextSeasonsWidgetService> _logger;
@@ -93,19 +97,24 @@ public class NextSeasonsWidgetService
             .OrderByDescending(item => item.SeasonFirstAired ?? DateTime.MinValue)
             .ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)
             .Take(limit)
-            .Select(item => new NextSeasonWidgetItem
+            .Select(item =>
             {
-                TraktId = item.TraktId,
-                TvdbId = item.TvdbId,
-                Title = item.Title,
-                Year = item.Year,
-                SeasonNumber = item.SeasonNumber!.Value,
-                EpisodeCount = item.SeasonEpisodeCount,
-                AiredEpisodes = item.SeasonAiredEpisodes,
-                FirstAired = item.SeasonFirstAired,
-                IsAiring = item.SeasonIsAiring,
-                ImagePath = GetImagePath(item),
-                Requested = requestedForUser.ContainsKey(GetRequestKey(item.TraktId, item.SeasonNumber!.Value))
+                var images = GetImagePaths(item);
+                return new NextSeasonWidgetItem
+                {
+                    TraktId = item.TraktId,
+                    TvdbId = item.TvdbId,
+                    Title = item.Title,
+                    Year = item.Year,
+                    SeasonNumber = item.SeasonNumber!.Value,
+                    EpisodeCount = item.SeasonEpisodeCount,
+                    AiredEpisodes = item.SeasonAiredEpisodes,
+                    FirstAired = item.SeasonFirstAired,
+                    IsAiring = item.SeasonIsAiring,
+                    ImagePath = images.ImagePath,
+                    FallbackImagePath = images.FallbackImagePath,
+                    Requested = requestedForUser.ContainsKey(GetRequestKey(item.TraktId, item.SeasonNumber!.Value))
+                };
             })
             .ToList();
     }
@@ -193,6 +202,16 @@ public class NextSeasonsWidgetService
             _logger.LogDebug(ex, "Could not load artwork for Trakt show {TraktId}", traktId);
         }
 
+        if (url == null)
+        {
+            // Worth saying out loud: a card with no artwork is the most visible failure the widget
+            // has, and the cause is usually a show that is neither in the library nor illustrated on
+            // Trakt. Logged at most once every PosterMissCacheDuration per show.
+            _logger.LogInformation(
+                "No artwork available for Trakt show {TraktId}; the widget will show a plain tile",
+                traktId);
+        }
+
         _posterCache[traktId] = new CachedPoster
         {
             Url = url,
@@ -208,42 +227,45 @@ public class NextSeasonsWidgetService
     }
 
     /// <summary>
-    /// Prefers the artwork Jellyfin already holds for the series - the show itself is normally in the
-    /// library, since the user watched an earlier season - and only falls back to Trakt.
+    /// Picks the artwork for a card: the show's own images from the Jellyfin library, with Trakt as a
+    /// second chance.
     /// </summary>
     /// <remarks>
-    /// Wide images first: the widget draws the same 16:9 cards Jellyfin's own home screen rows use, so
-    /// a portrait poster only gets picked when the show has nothing else, and is cropped to fit.
+    /// The library is preferred because the show itself is normally there - the user watched an
+    /// earlier season - and it is the same artwork the rest of their home screen shows. Both paths are
+    /// returned so the widget can retry with Trakt if the library image turns out to be missing.
     /// </remarks>
-    private string? GetImagePath(ContentItem item)
+    private (string? ImagePath, string? FallbackImagePath) GetImagePaths(ContentItem item)
     {
-        if (item.TvdbId.HasValue && item.TvdbId.Value != 0)
-        {
-            try
-            {
-                var series = _localLibraryService.FindSeriesByTvdbId(item.TvdbId.Value);
-                if (series != null)
-                {
-                    foreach (var imageType in WideImageTypes)
-                    {
-                        if (series.HasImage(imageType, 0))
-                        {
-                            return string.Create(
-                                CultureInfo.InvariantCulture,
-                                $"Items/{series.Id:N}/Images/{imageType}?fillWidth=560&fillHeight=315&quality=90");
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Could not resolve library artwork for {Title}", item.Title);
-            }
-        }
-
-        return item.TraktId == 0
+        var traktPath = item.TraktId == 0
             ? null
             : string.Create(CultureInfo.InvariantCulture, $"JellyNext/Widget/Poster/{item.TraktId}");
+
+        try
+        {
+            var series = _localLibraryService.FindSeriesByAnyProviderId(item.TvdbId, item.TmdbId, item.ImdbId);
+            if (series != null)
+            {
+                foreach (var imageType in PreferredImageTypes)
+                {
+                    if (series.HasImage(imageType, 0))
+                    {
+                        var libraryPath = string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Items/{series.Id:N}/Images/{imageType}?fillWidth=560&fillHeight=315&quality=90");
+                        return (libraryPath, traktPath);
+                    }
+                }
+
+                _logger.LogDebug("{Title} is in the library but has no artwork yet", item.Title);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not resolve library artwork for {Title}", item.Title);
+        }
+
+        return (traktPath, null);
     }
 
     private sealed class CachedPoster
