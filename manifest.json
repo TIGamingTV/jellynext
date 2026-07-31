@@ -9,6 +9,16 @@
     "imageUrl": "https://raw.githubusercontent.com/TIGamingTV/jellynext/main/images/jellynext_logo.png",
     "versions": [
       {
+        "version": "1.9.2.0",
+        "changelog": "### Bug Fixes\n\n- **Widget cards showed a blank tile or an episode still instead of the show's artwork**\n  - The library lookup only matched shows by their TVDB ID, so a show Jellyfin identified through a different provider — anime matched by TMDB is the common case — looked absent from the library, and its artwork was fetched from Trakt instead of taken from the images already on the server. Shows are now matched on TVDB, TMDB or IMDB\n  - Artwork preference is now Backdrop, then Thumb, then poster. Both of the first two are 16:9, but a series thumbnail is often a scene still that reads as \"some episode\" rather than as the show; a backdrop is always key art. On Trakt the same reasoning puts fanart first and its screenshot-style \"thumb\" last\n  - A poster is no longer cropped into a strip to fill a 16:9 card: portrait artwork is shown whole inside the card\n  - If the library image fails to load, the card now retries with Trakt's artwork before giving up\n  - When there is genuinely no artwork anywhere, the tile shows the show's name instead of the first letter of it, and the reason is written to the log once per show rather than left invisible",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/jellynext/releases/download/v1.9.2.0/jellynext-v1.9.2.0.zip",
+        "checksum": "e013d6cafea539f9b000bbe0a7f685ab",
+        "timestamp": "2026-07-31T22:51:17Z",
+        "repositoryName": "JellyNext",
+        "repositoryUrl": "https://github.com/TIGamingTV/jellynext"
+      },
+      {
         "version": "1.9.1.0",
         "changelog": "### Improvements\n\n- **The New Seasons widget now looks like a native home screen row.** It previously drew its own small cards, hard against the left edge of the page, which sat oddly next to Continue Watching and Next Up\n  - Cards are built from Jellyfin's own card markup, so they are the same size, shape (16:9) and alignment as the rows around them in whatever theme and viewport the user has. Reimplementing that means copying a stack of viewport media queries and getting it subtly wrong; if those classes ever disappear, a probe detects it and a self-contained fallback layout takes over\n  - Artwork follows suit: the show's thumbnail or backdrop from the Jellyfin library, falling back to its poster, and to Trakt's fanart for shows not in the library. Previously the poster was always used, which had to be cropped into a wide card\n  - The season is now named in the card text (\"Season 2 · 2022 · 4 of 12 episodes\") as well as shown as a badge on the artwork\n  - **The widget now sits below the other home screen sections by default.** A plugin's row pushing Continue Watching down the screen is a poor first impression of an opt-in feature. Existing installations keep whatever they have saved; the setting is on the Widget tab\n  - The row is put back in place when Jellyfin adds a section after it. Home sections load one at a time, so a row placed at the bottom could end up in the middle a moment later",
         "targetAbi": "10.11.0.0",
