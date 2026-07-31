@@ -275,13 +275,15 @@ public class NextSeasonsProvider : IContentProvider
                 TraktId = cachedShow.TraktId,
                 ProviderName = ProviderName,
                 SeasonNumber = nextSeasonNumber,
+                SeasonFirstAired = cachedSeason.FirstAired,
+                SeasonIsAiring = SeasonReleaseHelper.IsAiring(cachedShow, cachedSeason),
                 Genres = cachedShow.Genres
             },
             null);
     }
 
     /// <summary>
-    /// Determines whether a season counts as a new release.
+    /// Determines whether a season counts as a new release for this user's window.
     /// </summary>
     /// <remarks>
     /// Backs the opt-in "recently released seasons only" filter, which exists because the default
@@ -290,27 +292,9 @@ public class NextSeasonsProvider : IContentProvider
     /// </remarks>
     private bool IsRecentlyReleased(ShowCacheEntry show, SeasonMetadata season, TraktUser traktUser)
     {
-        // A season part-way through its run is airing right now whatever its premiere date says, which
-        // keeps long or split-cour seasons visible past the cut-off. Ended shows are excluded because
-        // their unaired episode counts are leftovers from a cancellation, not an ongoing release.
-        if (!show.IsEnded && season.AiredEpisodes > 0 && season.EpisodeCount > season.AiredEpisodes)
-        {
-            return true;
-        }
-
-        if (!season.FirstAired.HasValue)
-        {
-            // Without a premiere date there is nothing to judge recency by, and the filter is meant to
-            // exclude by default - an undated season stays hidden rather than leaking the backlog back in.
-            return false;
-        }
-
-        var firstAired = season.FirstAired.Value;
-        var firstAiredUtc = firstAired.Kind == DateTimeKind.Unspecified
-            ? DateTime.SpecifyKind(firstAired, DateTimeKind.Utc)
-            : firstAired.ToUniversalTime();
-
-        var windowDays = Math.Clamp(traktUser.NextSeasonsRecentDays, 1, 3650);
-        return firstAiredUtc >= DateTime.UtcNow.AddDays(-windowDays);
+        return SeasonReleaseHelper.IsRecentlyReleased(
+            season.FirstAired,
+            SeasonReleaseHelper.IsAiring(show, season),
+            traktUser.NextSeasonsRecentDays);
     }
 }

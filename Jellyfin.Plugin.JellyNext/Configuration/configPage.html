@@ -35,6 +35,7 @@
                         <a type="button" class="emby-button" data-index="1" data-role="button">Trakt</a>
                         <a type="button" class="emby-button" data-index="2" data-role="button">Trending</a>
                         <a type="button" class="emby-button" data-index="3" data-role="button">Downloads</a>
+                        <a type="button" class="emby-button" data-index="4" data-role="button">Notifications</a>
                     </div>
 
                     <!-- Tab Content Containers (will be loaded dynamically) -->
@@ -42,6 +43,7 @@
                     <div class="tabContent" data-index="1" style="display: none;"></div>
                     <div class="tabContent" data-index="2" style="display: none;"></div>
                     <div class="tabContent" data-index="3" style="display: none;"></div>
+                    <div class="tabContent" data-index="4" style="display: none;"></div>
 
                     <!-- Save Button (outside all tabs) -->
                     <div style="margin-top: 2em;">
@@ -163,7 +165,8 @@
                 0: false,
                 1: false,
                 2: false,
-                3: false
+                3: false,
+                4: false
             };
 
             // Map tab index to tab name and file paths
@@ -171,7 +174,8 @@
                 0: { name: 'general', html: 'tabs/general.html', js: 'tabs/general.js' },
                 1: { name: 'trakt', html: 'tabs/trakt.html', js: 'tabs/trakt.js' },
                 2: { name: 'trending', html: 'tabs/trending.html', js: 'tabs/trending.js' },
-                3: { name: 'downloads', html: 'tabs/downloads.html', js: 'tabs/downloads.js' }
+                3: { name: 'downloads', html: 'tabs/downloads.html', js: 'tabs/downloads.js' },
+                4: { name: 'notifications', html: 'tabs/notifications.html', js: 'tabs/notifications.js' }
             };
 
             // Load tab content and script
@@ -229,7 +233,8 @@
                     loadTabContent(0),
                     loadTabContent(1),
                     loadTabContent(2),
-                    loadTabContent(3)
+                    loadTabContent(3),
+                    loadTabContent(4)
                 ]);
             }
 
@@ -266,6 +271,9 @@
                     if (window.loadDownloadsConfig) {
                         loadDownloadsConfig(pluginConfig);
                     }
+                    if (window.loadNotificationsSettings) {
+                        loadNotificationsSettings(pluginConfig);
+                    }
 
                     Dashboard.hideLoadingMsg();
                 }).catch(function(error) {
@@ -293,6 +301,9 @@
                     }
                     if (window.saveDownloadsConfig) {
                         saveDownloadsConfig(config);
+                    }
+                    if (window.saveNotificationsSettings) {
+                        saveNotificationsSettings(config);
                     }
 
                     // Save plugin configuration

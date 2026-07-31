@@ -17,6 +17,7 @@ public class ContentSyncService
     private readonly ILogger<ContentSyncService> _logger;
     private readonly ContentCacheService _cacheService;
     private readonly ShowsCacheService _showsCache;
+    private readonly NewSeasonNotificationService _newSeasonNotifications;
     private readonly IEnumerable<IContentProvider> _providers;
 
     /// <summary>
@@ -25,16 +26,19 @@ public class ContentSyncService
     /// <param name="logger">The logger.</param>
     /// <param name="cacheService">The cache service.</param>
     /// <param name="showsCache">The shows cache service.</param>
+    /// <param name="newSeasonNotifications">The new season notification service.</param>
     /// <param name="providers">The collection of content providers.</param>
     public ContentSyncService(
         ILogger<ContentSyncService> logger,
         ContentCacheService cacheService,
         ShowsCacheService showsCache,
+        NewSeasonNotificationService newSeasonNotifications,
         IEnumerable<IContentProvider> providers)
     {
         _logger = logger;
         _cacheService = cacheService;
         _showsCache = showsCache;
+        _newSeasonNotifications = newSeasonNotifications;
         _providers = providers;
     }
 
@@ -107,6 +111,18 @@ public class ContentSyncService
             }
 
             await SyncProviderAsync(userId, provider, cancellationToken);
+        }
+
+        // Announced from the freshly cached results rather than from inside the provider: a provider
+        // whose fetch failed leaves the previous cache in place, and re-announcing it is harmless
+        // because every season is only ever emailed once.
+        try
+        {
+            await _newSeasonNotifications.NotifyUserAsync(userId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send new season notifications for user {UserId}", userId);
         }
 
         _logger.LogInformation("Completed content sync for user {UserId}", userId);

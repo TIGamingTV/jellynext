@@ -63,6 +63,21 @@ public class ContentItem
     public int? AiredSeasonCount { get; set; }
 
     /// <summary>
+    /// Gets or sets the premiere date of <see cref="SeasonNumber"/>, if known.
+    /// </summary>
+    public DateTime? SeasonFirstAired { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether <see cref="SeasonNumber"/> is part-way through airing.
+    /// </summary>
+    /// <remarks>
+    /// Carried on the item because the season a user is being pointed at is often absent from the
+    /// season cache - an ongoing show's incomplete season is fetched on demand and deliberately not
+    /// cached - and that is exactly the season a "new season" notification is about.
+    /// </remarks>
+    public bool SeasonIsAiring { get; set; }
+
+    /// <summary>
     /// Gets or sets the genres.
     /// </summary>
     public string[] Genres { get; set; } = Array.Empty<string>();

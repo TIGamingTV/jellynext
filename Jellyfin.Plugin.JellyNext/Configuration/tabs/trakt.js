@@ -22,6 +22,7 @@ function initTraktTab() {
     // Set up event listeners for Trakt tab
     setupTraktEventListeners();
     onNextSeasonsRecentOnlyChanged();
+    onNotifyNewSeasonsChanged();
     console.log('Trakt tab initialized');
 }
 
@@ -60,6 +61,11 @@ function onAuthModeChanged() {
 function onNextSeasonsRecentOnlyChanged() {
     var enabled = document.getElementById('UserNextSeasonsRecentOnly').checked;
     document.getElementById('UserNextSeasonsRecentDaysContainer').style.display = enabled ? 'block' : 'none';
+}
+
+function onNotifyNewSeasonsChanged() {
+    var enabled = document.getElementById('UserNotifyNewSeasonsByEmail').checked;
+    document.getElementById('UserNotificationEmailContainer').style.display = enabled ? 'block' : 'none';
 }
 
 function loadTraktPluginStatus() {
@@ -101,6 +107,10 @@ function setupTraktEventListeners() {
     // The new-release window only means anything while the filter is on
     document.getElementById('UserNextSeasonsRecentOnly')
         .addEventListener('change', onNextSeasonsRecentOnlyChanged);
+
+    // The address is only meaningful while notifications are on
+    document.getElementById('UserNotifyNewSeasonsByEmail')
+        .addEventListener('change', onNotifyNewSeasonsChanged);
 
     // Register a user whose token already lives in the official Trakt plugin
     document.getElementById('LinkSharedBtn').addEventListener('click', function () {
@@ -300,6 +310,9 @@ function loadUserSettings() {
         document.getElementById('UserLimitShowsToSeasonOne').checked = settings.limitShowsToSeasonOne !== false;
         document.getElementById('UserMovieRecommendationsLimit').value = settings.movieRecommendationsLimit || 50;
         document.getElementById('UserShowRecommendationsLimit').value = settings.showRecommendationsLimit || 50;
+        document.getElementById('UserNotifyNewSeasonsByEmail').checked = settings.notifyNewSeasonsByEmail === true;
+        document.getElementById('UserNotificationEmail').value = settings.notificationEmail || '';
+        onNotifyNewSeasonsChanged();
     }).catch(function (error) {
         console.error('Error loading user settings:', error);
     });
@@ -349,7 +362,9 @@ function saveUserTraktSettings(userGuid) {
         ignoreWatchlisted: document.getElementById('UserIgnoreWatchlisted').checked,
         limitShowsToSeasonOne: document.getElementById('UserLimitShowsToSeasonOne').checked,
         movieRecommendationsLimit: parseInt(document.getElementById('UserMovieRecommendationsLimit').value, 10),
-        showRecommendationsLimit: parseInt(document.getElementById('UserShowRecommendationsLimit').value, 10)
+        showRecommendationsLimit: parseInt(document.getElementById('UserShowRecommendationsLimit').value, 10),
+        notifyNewSeasonsByEmail: document.getElementById('UserNotifyNewSeasonsByEmail').checked,
+        notificationEmail: document.getElementById('UserNotificationEmail').value
     };
 
     return ApiClient.fetch({

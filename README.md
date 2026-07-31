@@ -111,6 +111,12 @@ Features:
 - **Playback Prevention**: Clears playback state to prevent marking virtual items as "watched"
 - **Works Everywhere**: All Jellyfin clients (Web, iOS, Android, TV apps)
 
+### 📧 New Season Email Notifications
+- **Told When a Season Drops**: Emails a user when a new season of a show they watch is released
+- **One Digest, One Announcement**: All new seasons found in a sync go out in a single email, and each season is only ever announced once
+- **Genuinely New Only**: A season qualifies if it premiered inside the notification window or is still airing — finishing an old show does not produce an email
+- **Per-User Opt-In**: Each user enables notifications and sets their own address (Jellyfin accounts have no email address of their own)
+
 ### 🎨 Native Jellyfin Integration
 - **Standard Metadata**: Uses Jellyfin's built-in TMDB/TVDB metadata providers (no separate API key needed)
 - **Native Resolution**: Virtual libraries use standard .strm file naming conventions (`[tmdbid-X]`, `[tvdbid-X]`)
@@ -216,6 +222,10 @@ After authorization, configure what to sync for each user:
 **Next Seasons Filters:**
 - ☐ **Only Newly Released Seasons**: Only suggest a next season if it premiered recently or is still airing. Off by default, which suggests the next unwatched season of every show you haven't finished, including shows that ended years ago
 - **New Release Window (days)**: How long after its premiere a season still counts as new (1-3650, default: 90). A season part-way through its run always counts as new
+
+**New Season Notifications:**
+- ☐ **Email Me About New Seasons**: Email this user when a new season of a show they watch is released. Requires **Sync Next Seasons**, and SMTP settings on the Notifications tab
+- **Email Address**: Where this user's notifications are sent
 
 **Recommendation Limits:**
 - **Movie Recommendations Limit**: Number of movie recommendations to fetch (1-100, default: 50)
@@ -413,6 +423,22 @@ Use this for custom integrations with external systems, notification services, o
 
 Click **Save** when done.
 
+### Step 5: Configure New Season Emails (Optional)
+
+Go to **Dashboard → Plugins → JellyNext → Notifications tab**.
+
+1. Enable **New Season Email Notifications** (master switch — each user still opts in individually)
+2. **Announce Seasons Released Within (days)**: how recently a season must have premiered to be announced (1-365, default: 30). A season part-way through airing is always announced
+3. Fill in the SMTP server settings:
+   - **SMTP Server** / **SMTP Port**: use port 587 (STARTTLS) or 25. **Port 465 (implicit SSL) is not supported** — providers that offer 465 practically always offer 587 as well
+   - **Use STARTTLS**: leave enabled unless the server is a local relay without encryption
+   - **Username** / **Password**: leave the username empty to send without authentication. Use a provider app password rather than your account password — like every other credential a Jellyfin plugin holds, it is stored in plain text in the plugin configuration
+   - **From Address** / **From Name**: many providers require the address to match the authenticated account
+4. **Save**, then use **Send Test Email** to confirm the settings (the test uses the *saved* configuration)
+5. On the **Trakt tab**, select a user, tick **Email Me About New Seasons** and enter their address
+
+Notifications are sent as part of the "Sync Trakt Content" scheduled task, so they arrive at most once per sync interval (default: every 6 hours).
+
 ## Usage
 
 ### Understanding Virtual Libraries
@@ -449,6 +475,20 @@ When enabled, JellyNext automatically monitors your Trakt watchlist and adds ite
 **To enable**: Go to **Dashboard → Plugins → JellyNext → Trakt tab**, select a user, and check **"Sync Watchlist Movies"** and/or **"Sync Watchlist Shows"**.
 
 **Note**: Watchlist sync requires a download integration to be configured (Native, Jellyseerr, or Webhook).
+
+### New Season Emails
+
+When enabled, JellyNext emails a user as new seasons of the shows they watch are released:
+
+- **What triggers one**: a season that has just entered the user's Next Seasons library — the next season they haven't watched, already aired, and not already in Jellyfin — *and* is a new release: premiered inside the notification window, or part-way through airing.
+- **What doesn't**: catching up on an old show. Finishing season 2 of a show that ended in 2015 makes season 3 a "next season", but nothing about it is new, so no email is sent.
+- **One email per sync**: everything found in a run goes out as a single digest listing each show, season and premiere date.
+- **Announced once**: sent announcements are recorded in the plugin configuration, so a restart doesn't repeat them, and a season that airs over several months is not re-announced part-way through. Records are dropped after 400 days.
+- **Failures retry**: if the send fails, nothing is recorded and the same seasons are retried on the next sync.
+
+**To enable**: configure SMTP on the **Notifications** tab, then tick **"Email Me About New Seasons"** for each user on the **Trakt** tab.
+
+**Note**: this needs **Sync Next Seasons** enabled for the user — the notifications are driven by that library's content.
 
 ### Downloading Content
 
@@ -610,14 +650,16 @@ Jellyfin.Plugin.JellyNext/
 │   ├── JellyseerrController.cs   # Jellyseerr connection testing, server/profile retrieval
 │   ├── RadarrController.cs       # Radarr connection testing, profiles (native mode)
 │   ├── SonarrController.cs       # Sonarr connection testing, profiles (native mode)
+│   ├── NotificationsController.cs  # Test email endpoint
 │   └── JellyNextLibraryController.cs  # Query cached content
 ├── Configuration/                # Plugin settings
 │   ├── PluginConfiguration.cs   # Settings model (persisted)
 │   └── configPage.html           # Admin web UI
 ├── Helpers/                      # Utility classes
+│   ├── SeasonReleaseHelper.cs    # Shared "is this season a new release" rule
 │   └── UserHelper.cs             # User configuration lookups
 ├── Models/                       # Data models organized by service
-│   ├── Common/                   # ContentItem, ContentType, DownloadResult
+│   ├── Common/                   # ContentItem, ContentType, DownloadResult, NotifiedSeason
 │   ├── Jellyseerr/               # MediaRequest, JellyseerrUser, RadarrServer, SonarrServer
 │   ├── Trakt/                    # TraktUser, TraktMovie, TraktShow, OAuth models
 │   ├── Radarr/                   # Movie, QualityProfile, RootFolder
@@ -637,6 +679,8 @@ Jellyfin.Plugin.JellyNext/
 │   ├── ContentCacheService.cs    # In-memory content cache (6hr expiration)
 │   ├── ShowsCacheService.cs      # Season-level cache for TV shows with incremental sync
 │   ├── LocalLibraryService.cs    # Jellyfin library queries
+│   ├── EmailService.cs           # SMTP sender
+│   ├── NewSeasonNotificationService.cs  # New season email digests
 │   ├── PlaybackInterceptor.cs    # Detects virtual playback, routes to download provider
 │   ├── JellyseerrService.cs      # Jellyseerr API client (user import, requests)
 │   ├── RadarrService.cs          # Radarr API client (native mode)

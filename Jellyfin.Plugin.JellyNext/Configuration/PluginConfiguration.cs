@@ -235,6 +235,62 @@ public class PluginConfiguration : BasePluginConfiguration
     public int TrendingMoviesLimit { get; set; } = 50;
 
     /// <summary>
+    /// Gets or sets a value indicating whether new-season email notifications are sent.
+    /// </summary>
+    public bool EmailNotificationsEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets the SMTP server host name.
+    /// </summary>
+    public string SmtpHost { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the SMTP server port.
+    /// </summary>
+    public int SmtpPort { get; set; } = 587;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the connection is upgraded to TLS with STARTTLS.
+    /// </summary>
+    /// <remarks>
+    /// Implicit TLS (the SMTPS port 465) is not supported: JellyNext sends through the framework's
+    /// <c>SmtpClient</c>, which only speaks STARTTLS, and pulling in a mail library is not an option
+    /// because copying NuGet dependencies into the plugin output would also copy the
+    /// <c>MediaBrowser.*</c> assemblies that must resolve from the host instead. Providers offering
+    /// 465 practically always offer 587 as well.
+    /// </remarks>
+    public bool SmtpUseStartTls { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the SMTP username. Empty sends without authentication.
+    /// </summary>
+    public string SmtpUsername { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the SMTP password.
+    /// </summary>
+    public string SmtpPassword { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the address notifications are sent from.
+    /// </summary>
+    public string SmtpFromAddress { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the display name notifications are sent from.
+    /// </summary>
+    public string SmtpFromName { get; set; } = "JellyNext";
+
+    /// <summary>
+    /// Gets or sets how many days after its premiere a season is still announced as new (1-365).
+    /// </summary>
+    /// <remarks>
+    /// Independent of the per-user <c>NextSeasonsRecentDays</c> library filter: a user may want a
+    /// wide library window but only be told about seasons that have genuinely just dropped.
+    /// </remarks>
+    public int NewSeasonNotificationWindowDays { get; set; } = 30;
+
+    /// <summary>
     /// Gets or sets the OAuth application identity JellyNext presents to Trakt.
     /// Defaults to <see cref="TraktAuthMode.Standalone"/> so existing installations keep working.
     /// </summary>

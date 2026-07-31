@@ -1,4 +1,5 @@
 using System;
+using Jellyfin.Plugin.JellyNext.Models.Common;
 
 namespace Jellyfin.Plugin.JellyNext.Models.Trakt;
 
@@ -93,4 +94,22 @@ public class TraktUser
     /// </summary>
     public bool SyncWatchlistShows { get; set; } = false;
 
+    /// <summary>
+    /// Gets or sets a value indicating whether to email this user when a new season of a show they
+    /// watch is released.
+    /// </summary>
+    public bool NotifyNewSeasonsByEmail { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets the address new-season notifications are sent to.
+    /// </summary>
+    /// <remarks>
+    /// Held here because Jellyfin accounts have no email address of their own.
+    /// </remarks>
+    public string NotificationEmail { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the seasons this user has already been told about.
+    /// </summary>
+    public NotifiedSeason[] NotifiedSeasons { get; set; } = Array.Empty<NotifiedSeason>();
 }
