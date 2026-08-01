@@ -3,12 +3,15 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyNext.Helpers;
 using Jellyfin.Plugin.JellyNext.Models.Common;
 using Jellyfin.Plugin.JellyNext.Services.DownloadProviders;
 using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Providers;
@@ -40,6 +43,17 @@ public class NextSeasonsWidgetService
     private static readonly TimeSpan PosterMissCacheDuration = TimeSpan.FromHours(12);
 
     /// <summary>
+    /// How long to wait for an image host to answer before treating the artwork as unusable.
+    /// </summary>
+    private static readonly TimeSpan ImageCheckTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// How many candidates are checked before giving up, so a show with a lot of bad artwork cannot
+    /// hold up the request.
+    /// </summary>
+    private const int MaxImageChecks = 4;
+
+    /// <summary>
     /// Library image types in the order the widget wants them.
     /// </summary>
     /// <remarks>
@@ -58,6 +72,7 @@ public class NextSeasonsWidgetService
     private readonly DownloadProviderFactory _downloadProviderFactory;
     private readonly TraktApi _traktApi;
     private readonly IProviderManager _providerManager;
+    private readonly IHttpClientFactory _httpClientFactory;
 
     // Not persisted, like the watchlist's request tracking: the durable answer to "do I have this
     // season" is the library, which the next content sync re-checks. This only keeps the button from
@@ -79,13 +94,15 @@ public class NextSeasonsWidgetService
     /// <param name="downloadProviderFactory">The download provider factory.</param>
     /// <param name="traktApi">The Trakt API service.</param>
     /// <param name="providerManager">The metadata provider manager.</param>
+    /// <param name="httpClientFactory">The HTTP client factory.</param>
     public NextSeasonsWidgetService(
         ILogger<NextSeasonsWidgetService> logger,
         ContentCacheService cacheService,
         LocalLibraryService localLibraryService,
         DownloadProviderFactory downloadProviderFactory,
         TraktApi traktApi,
-        IProviderManager providerManager)
+        IProviderManager providerManager,
+        IHttpClientFactory httpClientFactory)
     {
         _logger = logger;
         _cacheService = cacheService;
@@ -93,6 +110,7 @@ public class NextSeasonsWidgetService
         _downloadProviderFactory = downloadProviderFactory;
         _traktApi = traktApi;
         _providerManager = providerManager;
+        _httpClientFactory = httpClientFactory;
     }
 
     /// <summary>
@@ -200,9 +218,21 @@ public class NextSeasonsWidgetService
         }
 
         _imageLookups.TryGetValue(traktId, out var lookup);
+        var title = lookup?.Title ?? "unknown show";
 
-        var url = await GetProviderImageUrlAsync(lookup).ConfigureAwait(false)
-            ?? await GetTraktImageUrlAsync(traktId).ConfigureAwait(false);
+        var url = await FirstImageThatLoadsAsync(
+            await GetProviderImageCandidatesAsync(lookup).ConfigureAwait(false),
+            "a metadata provider",
+            title).ConfigureAwait(false);
+
+        if (url == null)
+        {
+            var traktUrl = await GetTraktImageUrlAsync(traktId).ConfigureAwait(false);
+            url = await FirstImageThatLoadsAsync(
+                traktUrl == null ? Array.Empty<string>() : new[] { traktUrl },
+                "Trakt",
+                title).ConfigureAwait(false);
+        }
 
         if (url == null)
         {
@@ -211,7 +241,7 @@ public class NextSeasonsWidgetService
             _logger.LogInformation(
                 "No artwork available for {Title} (Trakt {TraktId}) from Jellyfin's metadata providers "
                 + "or Trakt; the widget will show a plain tile",
-                lookup?.Title ?? "unknown show",
+                title,
                 traktId);
         }
 
@@ -225,6 +255,66 @@ public class NextSeasonsWidgetService
     }
 
     /// <summary>
+    /// Returns the first candidate that actually serves an image.
+    /// </summary>
+    /// <remarks>
+    /// A URL that a provider offers is not necessarily one that resolves - a metadata entry with no
+    /// file path produces a well-formed URL that 404s. Redirecting the browser to it would waste the
+    /// card, because by then the remaining candidates are out of reach, so each one is checked here
+    /// while there is still something else to try. Only paid once per show, on a cache miss.
+    /// </remarks>
+    private async Task<string?> FirstImageThatLoadsAsync(IEnumerable<string> candidates, string source, string title)
+    {
+        foreach (var candidate in candidates.Where(url => !string.IsNullOrWhiteSpace(url)).Take(MaxImageChecks))
+        {
+            if (await IsReachableAsync(candidate).ConfigureAwait(false))
+            {
+                _logger.LogDebug("Artwork for {Title} came from {Source}: {Url}", title, source, candidate);
+                return candidate;
+            }
+
+            _logger.LogDebug("Artwork candidate for {Title} from {Source} did not load: {Url}", title, source, candidate);
+        }
+
+        return null;
+    }
+
+    private async Task<bool> IsReachableAsync(string url)
+    {
+        try
+        {
+            using var httpClient = _httpClientFactory.CreateClient(NamedClient.Default);
+            httpClient.Timeout = ImageCheckTimeout;
+
+            using var request = new HttpRequestMessage(HttpMethod.Head, url);
+            using var response = await httpClient
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead)
+                .ConfigureAwait(false);
+
+            if (response.IsSuccessStatusCode
+                || response.StatusCode == HttpStatusCode.NotFound
+                || response.StatusCode == HttpStatusCode.Gone)
+            {
+                return response.IsSuccessStatusCode;
+            }
+
+            // Anything else is more likely a host that dislikes HEAD than a missing image, so ask for
+            // the headers of a GET instead of downloading the whole file.
+            using var getRequest = new HttpRequestMessage(HttpMethod.Get, url);
+            using var getResponse = await httpClient
+                .SendAsync(getRequest, HttpCompletionOption.ResponseHeadersRead)
+                .ConfigureAwait(false);
+
+            return getResponse.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not reach the artwork at {Url}", url);
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Asks Jellyfin's configured metadata providers for the show's artwork.
     /// </summary>
     /// <remarks>
@@ -234,12 +324,14 @@ public class NextSeasonsWidgetService
     /// membership. If that is ever rejected, the identify-style search is asked instead, which only
     /// needs a name and an ID.
     /// </remarks>
-    private async Task<string?> GetProviderImageUrlAsync(ShowImageLookup? lookup)
+    private async Task<IReadOnlyList<string>> GetProviderImageCandidatesAsync(ShowImageLookup? lookup)
     {
         if (lookup == null)
         {
-            return null;
+            return Array.Empty<string>();
         }
+
+        var candidates = new List<string>();
 
         try
         {
@@ -253,11 +345,7 @@ public class NextSeasonsWidgetService
                 .GetAvailableRemoteImages(item, new RemoteImageQuery(string.Empty), CancellationToken.None)
                 .ConfigureAwait(false);
 
-            var url = PickWidestImage(images);
-            if (url != null)
-            {
-                return url;
-            }
+            candidates.AddRange(PickImagesByPreference(images));
         }
         catch (Exception ex)
         {
@@ -278,15 +366,17 @@ public class NextSeasonsWidgetService
                 },
                 CancellationToken.None).ConfigureAwait(false);
 
-            return results
+            candidates.AddRange(results
                 .Select(result => result.ImageUrl)
-                .FirstOrDefault(imageUrl => !string.IsNullOrEmpty(imageUrl));
+                .Where(imageUrl => !string.IsNullOrEmpty(imageUrl))
+                .Select(imageUrl => imageUrl!));
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Metadata search failed for {Title}", lookup.Title);
-            return null;
         }
+
+        return candidates;
     }
 
     /// <summary>
@@ -319,27 +409,20 @@ public class NextSeasonsWidgetService
     }
 
     /// <summary>
-    /// Picks the best wide image available, in the same order the library images are preferred.
+    /// Orders the provider's images the same way the library's are preferred, best of each type first.
     /// </summary>
-    private static string? PickWidestImage(IEnumerable<RemoteImageInfo> images)
+    private static IEnumerable<string> PickImagesByPreference(IEnumerable<RemoteImageInfo> images)
     {
         var candidates = images.Where(image => !string.IsNullOrEmpty(image.Url)).ToList();
 
-        foreach (var imageType in PreferredImageTypes)
-        {
-            var best = candidates
+        return PreferredImageTypes
+            .Select(imageType => candidates
                 .Where(image => image.Type == imageType)
                 .OrderByDescending(image => image.CommunityRating ?? 0)
                 .ThenByDescending(image => image.Width ?? 0)
-                .FirstOrDefault();
-
-            if (best != null)
-            {
-                return best.Url;
-            }
-        }
-
-        return null;
+                .FirstOrDefault())
+            .Where(image => image != null)
+            .Select(image => image!.Url);
     }
 
     private static Dictionary<string, string> BuildProviderIds(ShowImageLookup lookup)
