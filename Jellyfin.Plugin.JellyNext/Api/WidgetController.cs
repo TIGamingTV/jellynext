@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyNext.Configuration;
 using Jellyfin.Plugin.JellyNext.Models.Common;
 using Jellyfin.Plugin.JellyNext.Services;
+using MediaBrowser.Common.Api;
 using MediaBrowser.Controller.Net;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -125,16 +126,18 @@ public class WidgetController : ControllerBase
     }
 
     /// <summary>
-    /// Redirects to a show's artwork, from Jellyfin's metadata providers or from Trakt.
+    /// Serves a show's artwork, from Jellyfin's metadata providers or from Trakt.
     /// </summary>
     /// <param name="traktId">The Trakt show ID.</param>
-    /// <returns>A redirect to the artwork.</returns>
+    /// <returns>The image.</returns>
     /// <remarks>
     /// Deliberately anonymous: browsers do not attach Jellyfin's token to <c>img</c> requests, and the
-    /// response is a redirect to public artwork.
+    /// response is public artwork. The bytes are served from here rather than redirected to, because a
+    /// browser that cannot reach the image host - a proxy sending <c>img-src 'self'</c>, an ad blocker,
+    /// filtered DNS - fails silently, leaving a blank card and nothing in the log.
     /// </remarks>
     [HttpGet("Poster/{traktId}")]
-    [ProducesResponseType(StatusCodes.Status302Found)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult> GetPoster([FromRoute, Required] int traktId)
     {
@@ -143,14 +146,38 @@ public class WidgetController : ControllerBase
             return NotFound();
         }
 
-        var url = await _widgetService.GetExternalImageUrlAsync(traktId);
-        if (string.IsNullOrEmpty(url))
+        var image = await _widgetService.GetImageAsync(traktId);
+        if (image == null)
         {
             return NotFound();
         }
 
         Response.Headers.CacheControl = "public, max-age=86400";
-        return Redirect(url);
+        return File(image.Value.Content, image.Value.ContentType);
+    }
+
+    /// <summary>
+    /// Reports what the server resolved for each card, for troubleshooting missing artwork.
+    /// </summary>
+    /// <param name="userId">The user whose widget contents to inspect.</param>
+    /// <returns>One entry per listed show.</returns>
+    /// <remarks>
+    /// Admin only, and deliberately verbose: a card that falls back to a name tile leaves almost no
+    /// trace otherwise, since a missing image path means no request is ever made.
+    /// </remarks>
+    [HttpGet("Diagnostics/{userId}")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<ActionResult<object>> GetDiagnostics([FromRoute, Required] Guid userId)
+    {
+        var config = Plugin.Instance?.Configuration;
+
+        return Ok(new
+        {
+            widgetEnabled = config?.NextSeasonsWidgetEnabled == true,
+            userId,
+            items = await _widgetService.GetDiagnosticsAsync(userId)
+        });
     }
 
     private async Task<Guid> GetUserId()

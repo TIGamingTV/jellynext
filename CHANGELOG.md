@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.9.5.0
+
+### Bug Fixes
+
+- **Widget cards could show only the show's name while the log said nothing at all**
+  - The card was redirected to the image host, so anything that stops the *browser* reaching it — a reverse proxy sending `Content-Security-Policy: img-src 'self'`, an ad blocker, filtered DNS — produced a blank card while the server saw a perfectly successful lookup and logged nothing. Jellyfin now serves the artwork itself, the same as it does for library images, so the picture is exactly as reachable as everything else on the page
+  - Artwork that has disappeared since it was resolved is dropped from the cache instead of being served as nothing for a week
+  - A show with no artwork source at all — not in the library and no Trakt ID — now logs a warning naming the show and its IDs. That state produces a name-only tile without a single request being made, so it previously left no trace anywhere
+
+### Improvements
+
+- **A "Check Artwork" button on the Widget tab** reports, per card, whether the show was matched in your library, which images that library item holds, the paths the card loads, and what your metadata providers and Trakt resolved to. A blank card is otherwise almost invisible to diagnose, since a missing image path means no request is ever made
+
+## v1.9.4.0
+
+### Bug Fixes
+
+- **Artwork was handed to the browser without checking it loads.** A metadata entry with no file path still produces a well-formed URL, which then 404s — redirecting the card to it wasted the card, because by that point the remaining sources were out of reach. Candidates are now checked in order until one answers, at a cost of one request per show per week, and the log says at debug level which source a show's picture came from
+
 ## v1.9.3.0
 
 ### Bug Fixes
@@ -15,7 +34,6 @@
   - A show in the library is looked up as its real library item, so the providers see the server's metadata language and library options. A show not in the library is looked up by its IDs, which is all the image providers need
   - A library poster is no longer preferred over a wide image from the providers: for a 16:9 card the poster is the worse picture, so it becomes the fallback the card uses if the provider lookup comes back empty
   - Lookups stay lazy, behind the image request, and are cached for 7 days (12 hours for a show with no artwork), so a row of twelve cards never becomes twelve metadata lookups before anything is drawn
-  - Each candidate is checked before the browser is sent to it, and the next one is tried if it does not load. A metadata entry with no file path produces a well-formed URL that 404s; redirecting the card to it would waste the card, because by then the remaining sources are out of reach. The check costs one request per show per week, and the log says at debug level which source a show's picture came from
 
 ## v1.9.2.0
 

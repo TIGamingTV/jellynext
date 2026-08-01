@@ -48,6 +48,11 @@ public class NextSeasonsWidgetService
     private static readonly TimeSpan ImageCheckTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>
+    /// How long to wait for the artwork itself, which is a real download rather than a probe.
+    /// </summary>
+    private static readonly TimeSpan ImageFetchTimeout = TimeSpan.FromSeconds(20);
+
+    /// <summary>
     /// How many candidates are checked before giving up, so a show with a lot of bad artwork cannot
     /// hold up the request.
     /// </summary>
@@ -279,6 +284,57 @@ public class NextSeasonsWidgetService
         return null;
     }
 
+    /// <summary>
+    /// Fetches a show's artwork so Jellyfin can serve it itself.
+    /// </summary>
+    /// <param name="traktId">The Trakt show ID.</param>
+    /// <returns>The image bytes and content type, or null when there is no artwork to serve.</returns>
+    /// <remarks>
+    /// The card used to be redirected to the image host, which fails invisibly whenever the browser
+    /// cannot reach it - a reverse proxy sending <c>Content-Security-Policy: img-src 'self'</c>, an ad
+    /// blocker, or filtered DNS all block third-party images while the server sees a perfectly
+    /// successful lookup. Serving the bytes from here makes the picture as reachable as the rest of
+    /// the library's artwork, which the browser is already loading.
+    /// </remarks>
+    public async Task<(byte[] Content, string ContentType)?> GetImageAsync(int traktId)
+    {
+        var url = await GetExternalImageUrlAsync(traktId).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(url))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var httpClient = _httpClientFactory.CreateClient(NamedClient.Default);
+            httpClient.Timeout = ImageFetchTimeout;
+
+            using var response = await httpClient.GetAsync(url).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                // The URL passed its check when it was resolved, so this is artwork that has gone away
+                // since. Drop it so the next request resolves again instead of serving nothing forever.
+                _posterCache.TryRemove(traktId, out _);
+                _logger.LogDebug(
+                    "Artwork for Trakt show {TraktId} is no longer available at {Url} ({Status})",
+                    traktId,
+                    url,
+                    response.StatusCode);
+                return null;
+            }
+
+            var content = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+            var contentType = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
+
+            return (content, contentType);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not fetch the artwork for Trakt show {TraktId} from {Url}", traktId, url);
+            return null;
+        }
+    }
+
     private async Task<bool> IsReachableAsync(string url)
     {
         try
@@ -459,6 +515,62 @@ public class NextSeasonsWidgetService
         return series;
     }
 
+    /// <summary>
+    /// Reports what the server sees for each card, so an artwork problem can be read off one page
+    /// instead of guessed at from a blank tile.
+    /// </summary>
+    /// <param name="userId">The user whose widget contents to inspect.</param>
+    /// <returns>One entry per listed show.</returns>
+    public async Task<IReadOnlyList<WidgetDiagnostics>> GetDiagnosticsAsync(Guid userId)
+    {
+        var report = new List<WidgetDiagnostics>();
+
+        foreach (var item in GetItems(userId))
+        {
+            var contentItem = _cacheService.GetCachedContent(userId, ProviderName)
+                .FirstOrDefault(cached => cached.TraktId == item.TraktId);
+
+            var diagnostics = new WidgetDiagnostics
+            {
+                Title = item.Title,
+                TraktId = item.TraktId,
+                TvdbId = item.TvdbId,
+                TmdbId = contentItem?.TmdbId,
+                ImdbId = contentItem?.ImdbId,
+                ImagePath = item.ImagePath,
+                FallbackImagePath = item.FallbackImagePath
+            };
+
+            try
+            {
+                var series = _localLibraryService.FindSeriesByAnyProviderId(
+                    item.TvdbId, contentItem?.TmdbId, contentItem?.ImdbId);
+
+                if (series != null)
+                {
+                    diagnostics.LibraryItemId = series.Id.ToString("N", CultureInfo.InvariantCulture);
+                    diagnostics.LibraryImages = PreferredImageTypes
+                        .Where(imageType => series.HasImage(imageType, 0))
+                        .Select(imageType => imageType.ToString())
+                        .ToArray();
+                }
+            }
+            catch (Exception ex)
+            {
+                diagnostics.Error = ex.Message;
+            }
+
+            if (item.TraktId != 0)
+            {
+                diagnostics.ResolvedExternalUrl = await GetExternalImageUrlAsync(item.TraktId).ConfigureAwait(false);
+            }
+
+            report.Add(diagnostics);
+        }
+
+        return report;
+    }
+
     private static string GetRequestKey(int traktId, int seasonNumber)
     {
         return string.Create(CultureInfo.InvariantCulture, $"{traktId}:{seasonNumber}");
@@ -526,12 +638,64 @@ public class NextSeasonsWidgetService
             };
         }
 
+        if (libraryPath == null && externalPath == null)
+        {
+            // Nothing to even attempt: the card can only be a name tile, and no image request will be
+            // made, so without this the failure leaves no trace on the server at all.
+            _logger.LogWarning(
+                "No artwork source for {Title}: it is not in the library and has no Trakt ID "
+                + "(TVDB {TvdbId}, TMDB {TmdbId}, IMDB {ImdbId})",
+                item.Title,
+                item.TvdbId,
+                item.TmdbId,
+                item.ImdbId ?? "none");
+        }
+
         // A poster is the library's least useful image for a 16:9 card, so a wide one from the
         // metadata providers is tried ahead of it and the poster becomes the backstop. Wide library
         // artwork always wins - it is the picture the rest of the home screen is already showing.
         return libraryImageIsWide
             ? (libraryPath, externalPath)
             : (externalPath ?? libraryPath, externalPath == null ? null : libraryPath);
+    }
+
+    /// <summary>
+    /// What the server resolved for one card, for the artwork check on the configuration page.
+    /// </summary>
+    public class WidgetDiagnostics
+    {
+        /// <summary>Gets or sets the show title.</summary>
+        public string Title { get; set; } = string.Empty;
+
+        /// <summary>Gets or sets the Trakt ID.</summary>
+        public int TraktId { get; set; }
+
+        /// <summary>Gets or sets the TVDB ID.</summary>
+        public int? TvdbId { get; set; }
+
+        /// <summary>Gets or sets the TMDB ID.</summary>
+        public int? TmdbId { get; set; }
+
+        /// <summary>Gets or sets the IMDB ID.</summary>
+        public string? ImdbId { get; set; }
+
+        /// <summary>Gets or sets the matched library item ID, if the show is in the library.</summary>
+        public string? LibraryItemId { get; set; }
+
+        /// <summary>Gets or sets the image types the library item actually holds.</summary>
+        public string[] LibraryImages { get; set; } = Array.Empty<string>();
+
+        /// <summary>Gets or sets the path the card loads first.</summary>
+        public string? ImagePath { get; set; }
+
+        /// <summary>Gets or sets the path the card falls back to.</summary>
+        public string? FallbackImagePath { get; set; }
+
+        /// <summary>Gets or sets what the metadata providers and Trakt resolved to.</summary>
+        public string? ResolvedExternalUrl { get; set; }
+
+        /// <summary>Gets or sets the error, if the lookup itself failed.</summary>
+        public string? Error { get; set; }
     }
 
     /// <summary>
