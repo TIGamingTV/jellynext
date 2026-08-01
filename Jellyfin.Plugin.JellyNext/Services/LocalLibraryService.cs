@@ -30,26 +30,6 @@ public class LocalLibraryService
     }
 
     /// <summary>
-    /// Finds a TV series in the local library by TVDB ID.
-    /// </summary>
-    /// <param name="tvdbId">The TVDB ID.</param>
-    /// <returns>The series if found, null otherwise.</returns>
-    public Series? FindSeriesByTvdbId(int tvdbId)
-    {
-        var allItems = _libraryManager.GetItemList(new InternalItemsQuery
-        {
-            IncludeItemTypes = new[] { BaseItemKind.Series },
-            HasTvdbId = true,
-            Recursive = true
-        });
-
-        return allItems
-            .OfType<Series>()
-            .Where(s => !s.Path?.Contains("jellynext-virtual", StringComparison.OrdinalIgnoreCase) ?? true)
-            .FirstOrDefault(s => s.GetProviderId(MetadataProvider.Tvdb) == tvdbId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-    }
-
-    /// <summary>
     /// Finds a TV series in the local library by any of the IDs known for it.
     /// </summary>
     /// <param name="tvdbId">The TVDB ID, if known.</param>
@@ -165,12 +145,18 @@ public class LocalLibraryService
     /// <summary>
     /// Checks if a specific season exists locally for a series.
     /// </summary>
-    /// <param name="tvdbId">The TVDB ID of the series.</param>
+    /// <param name="tvdbId">The TVDB ID of the series, if known.</param>
+    /// <param name="tmdbId">The TMDB ID of the series, if known.</param>
+    /// <param name="imdbId">The IMDB ID of the series, if known.</param>
     /// <param name="seasonNumber">The season number to check.</param>
     /// <returns>True if the season exists locally, false otherwise.</returns>
-    public bool DoesSeasonExist(int tvdbId, int seasonNumber)
+    /// <remarks>
+    /// Every ID is offered because a series matched by TMDB carries no TVDB ID: looking only for the
+    /// latter made the show look absent, so a season the user already had was suggested again.
+    /// </remarks>
+    public bool DoesSeasonExist(int? tvdbId, int? tmdbId, string? imdbId, int seasonNumber)
     {
-        var series = FindSeriesByTvdbId(tvdbId);
+        var series = FindSeriesByAnyProviderId(tvdbId, tmdbId, imdbId);
         if (series == null)
         {
             return false;

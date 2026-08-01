@@ -246,7 +246,11 @@ public class NextSeasonsProvider : IContentProvider
         }
 
         // Check if season exists in local library
-        var existsLocally = _localLibraryService.DoesSeasonExist(tvdbId, nextSeasonNumber);
+        var existsLocally = _localLibraryService.DoesSeasonExist(
+            cachedShow.TvdbId,
+            cachedShow.TmdbId,
+            cachedShow.ImdbId,
+            nextSeasonNumber);
         if (existsLocally)
         {
             _logger.LogDebug(

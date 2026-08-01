@@ -11,6 +11,10 @@
   - If the library image fails to load, the card now retries with Trakt's artwork before giving up
   - When there is genuinely no artwork anywhere, the tile shows the show's name instead of the first letter of it, and the reason is written to the log once per show rather than left invisible
 
+- **Seasons already in the library were offered again**, in the widget, the Next Seasons library and the watchlist sync
+  - All three asked "do I already have this show" by TVDB ID only, so a show Jellyfin identified through another provider was treated as absent — the same lookup gap behind the missing artwork. They now match on TVDB, TMDB or IMDB
+  - Expect the Next Seasons library and widget to shrink after the next sync if you have TMDB-matched shows: what disappears is seasons you already have
+
 ## v1.9.1.0
 
 ### Improvements

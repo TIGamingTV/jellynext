@@ -272,12 +272,12 @@ Implement `IContentProvider` + register in `PluginServiceRegistrator` → automa
 
 ### Next Seasons Discovery
 - Only suggests **immediate next season** (not all missing seasons)
-- Filters: aired episodes > 0, not in local library (via TVDB ID matching)
+- Filters: aired episodes > 0, not in local library (matched on TVDB, TMDB or IMDB id)
 - Creates ONE stub per show (not seasons 1-10 like recommendations)
 - **Sync-first approach**: Calls `ShowsCacheService.SyncWatchedShows()` before fetching content (refreshes watch progress from Trakt's watched snapshot)
 - **Cache-only reads**: Retrieves watched progress + season metadata entirely from ShowsCacheService (no duplicate API calls)
 - **Dynamic fetching**: If next season not in cache for ongoing shows, fetches latest from Trakt API via `GetShowSeasons()` and checks season count
-- **Library deduplication**: Uses LocalLibraryService to exclude shows already in Jellyfin library (TVDB ID matching)
+- **Library deduplication**: `LocalLibraryService.FindSeriesByAnyProviderId` excludes shows already in Jellyfin. Matching on TVDB alone silently failed for shows Jellyfin identified through TMDB - anime is the common case - so seasons the user already had were suggested again. Trakt always supplies a TVDB id; the *library* item is the side that may not carry one
 - **New-release filter** (opt-in, per user: `NextSeasonsRecentOnly` + `NextSeasonsRecentDays`, default off/90 days): without it the library answers "what haven't I finished" - the next season of a show that ended a decade ago ranks equal to one that premiered last week. With it, a season qualifies if it premiered inside the window, or if it is part-way through airing (`AiredEpisodes < EpisodeCount`) on a show that has not ended, which covers long and split-cour seasons whose premiere falls outside the window. A season with no `FirstAired` is excluded - the filter is meant to exclude by default. Filtering happens at read time in `NextSeasonsProvider`, never in `ShowsCacheService`, since the season cache is global and the setting is per user
 
 ### New Season Email Notifications
