@@ -888,6 +888,9 @@ Contributions are welcome! Please:
   interface feature; those clients keep using the virtual library
 
 **"The widget shows plain tiles with the show's name instead of artwork"**
+- Use **Dashboard → Plugins → JellyNext → Widget → Check Artwork**: it reports per card whether the
+  show was matched in your library, which images that item holds, and what the metadata providers and
+  Trakt resolved to, which says exactly which step came back empty
 - Images come from your Jellyfin library first (backdrop, then thumbnail, then poster), then from
   your server's metadata providers, then from Trakt. A tile means all three came back empty — the
   log says `No artwork available for ...` once per show when that happens

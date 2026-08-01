@@ -53,3 +53,28 @@
         </div>
     </div>
 </div>
+
+<!-- Artwork troubleshooting -->
+<div class="verticalSection">
+    <h3 class="sectionTitle">Check Artwork</h3>
+    <div class="fieldDescription" style="margin-bottom: 1em;">
+        Reports what the server resolved for each card of the selected user: whether the show was
+        matched in your library, which images that library item holds, the paths the card loads, and
+        what your metadata providers and Trakt returned. A card showing only the show's name means
+        every one of those came back empty — this says which step did.
+    </div>
+
+    <div class="selectContainer">
+        <label class="selectLabel" for="WidgetDiagnosticsUser">User:</label>
+        <select is="emby-select" id="WidgetDiagnosticsUser" class="emby-select-withcolor emby-select"></select>
+    </div>
+
+    <div style="margin-top: 1em;">
+        <button is="emby-button" type="button" id="CheckWidgetArtworkBtn" class="raised">
+            <span>Check Artwork</span>
+        </button>
+    </div>
+
+    <pre id="WidgetDiagnosticsOutput" style="display: none; margin-top: 1em; padding: 1em; overflow-x: auto;
+        background: rgba(127,127,127,.12); border-radius: .3em; font-size: .85em; line-height: 1.5;"></pre>
+</div>

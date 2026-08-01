@@ -23,7 +23,88 @@ function normalizeWidgetPosition(value) {
 }
 
 function initWidgetTab() {
+    document.getElementById('CheckWidgetArtworkBtn').addEventListener('click', checkWidgetArtwork);
+    populateWidgetDiagnosticsUsers();
     console.log('Widget tab initialized');
+}
+
+// The users dropdown is filled from the same call the rest of the page uses; it is only ready after
+// the shared loadUsers() has run, so this is retried until it is.
+function populateWidgetDiagnosticsUsers() {
+    ApiClient.getUsers().then(function (users) {
+        var selector = document.getElementById('WidgetDiagnosticsUser');
+        if (!selector) {
+            return;
+        }
+
+        selector.innerHTML = '';
+        users.forEach(function (user) {
+            var option = document.createElement('option');
+            option.value = user.Id;
+            option.textContent = user.Name;
+            selector.appendChild(option);
+        });
+    });
+}
+
+function checkWidgetArtwork() {
+    var userId = document.getElementById('WidgetDiagnosticsUser').value;
+    var output = document.getElementById('WidgetDiagnosticsOutput');
+
+    if (!userId) {
+        Dashboard.alert('Pick a user first.');
+        return;
+    }
+
+    Dashboard.showLoadingMsg();
+
+    ApiClient.fetch({
+        type: 'GET',
+        url: ApiClient.getUrl('JellyNext/Widget/Diagnostics/' + userId),
+        headers: { accept: 'application/json' }
+    }).then(function (response) {
+        return response.json();
+    }).then(function (result) {
+        Dashboard.hideLoadingMsg();
+        output.style.display = 'block';
+        output.textContent = formatWidgetDiagnostics(result);
+    }).catch(function (error) {
+        Dashboard.hideLoadingMsg();
+        console.error('Error checking widget artwork:', error);
+        Dashboard.alert('Could not check the artwork: ' + (error.message || 'unknown error'));
+    });
+}
+
+function formatWidgetDiagnostics(result) {
+    if (!result) {
+        return 'No response.';
+    }
+
+    var lines = ['Widget enabled: ' + result.widgetEnabled];
+
+    if (!result.items || !result.items.length) {
+        lines.push('');
+        lines.push('No cached Next Seasons content for this user. The widget shows nothing until the');
+        lines.push('"Sync Trakt Content" task has run with "Sync Next Seasons" enabled for them.');
+        return lines.join('\n');
+    }
+
+    result.items.forEach(function (item) {
+        lines.push('');
+        lines.push(item.Title + '  (trakt ' + item.TraktId + ', tvdb ' + (item.TvdbId || '-') +
+            ', tmdb ' + (item.TmdbId || '-') + ', imdb ' + (item.ImdbId || '-') + ')');
+        lines.push('  in library:   ' + (item.LibraryItemId
+            ? item.LibraryItemId + ' holding [' + (item.LibraryImages || []).join(', ') + ']'
+            : 'not matched'));
+        lines.push('  card loads:   ' + (item.ImagePath || 'nothing'));
+        lines.push('  then tries:   ' + (item.FallbackImagePath || 'nothing'));
+        lines.push('  providers/Trakt resolved: ' + (item.ResolvedExternalUrl || 'nothing'));
+        if (item.Error) {
+            lines.push('  error: ' + item.Error);
+        }
+    });
+
+    return lines.join('\n');
 }
 
 function loadWidgetSettings(config) {
