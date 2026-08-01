@@ -535,10 +535,11 @@ When enabled, the Jellyfin home screen gains a row of the shows you have an unwa
   reads "Requested" and stays that way until the season shows up in your library and the item
   disappears from the list.
 - **Artwork**: the show's backdrop or thumbnail from your Jellyfin library when the show is already
-  in it — which is usually the case, since you watched an earlier season — falling back to its
-  poster, and to Trakt's artwork for shows you don't have. Shows are matched to your library on
-  TVDB, TMDB or IMDB ID. A poster is shown whole rather than cropped into the wide card, and a show
-  with no artwork anywhere gets a plain tile with its name on it.
+  in it — which is usually the case, since you watched an earlier season, and it is the same picture
+  the rest of your home screen shows. Otherwise Jellyfin's own metadata providers (TMDB, TheTVDB,
+  whatever your server uses) are asked for the show's artwork, with Trakt as a last resort. Shows are
+  matched to your library on TVDB, TMDB or IMDB ID. A poster is shown whole rather than cropped into
+  the wide card, and a show with no artwork anywhere gets a plain tile with its name on it.
 - **Cost**: none in Trakt requests. The widget reads the content the sync already cached.
 
 **To enable**: **Dashboard → Plugins → JellyNext → Widget tab**, then reload the web interface with
@@ -887,11 +888,12 @@ Contributions are welcome! Please:
   interface feature; those clients keep using the virtual library
 
 **"The widget shows plain tiles with the show's name instead of artwork"**
-- Images come from your Jellyfin library first (backdrop, then thumbnail, then poster). A show that
-  is in your library but has no artwork yet gets one after Jellyfin's next metadata refresh
-- For shows not in your library, artwork comes from Trakt, which does not have an image for every
-  title. A missing one is not an error — the log says `No artwork available for Trakt show ...`
-  once per show when this happens
+- Images come from your Jellyfin library first (backdrop, then thumbnail, then poster), then from
+  your server's metadata providers, then from Trakt. A tile means all three came back empty — the
+  log says `No artwork available for ...` once per show when that happens
+- A show in your library with no artwork at all gets some after Jellyfin's next metadata refresh
+- If every card is a tile, check that your metadata providers are working for TV in
+  **Dashboard → Libraries**, since the widget uses the same ones
 
 **"The widget's cards don't match the other rows"**
 - The cards are drawn with the web client's own card classes, so this only happens on a Jellyfin

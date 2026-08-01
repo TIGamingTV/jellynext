@@ -314,7 +314,7 @@ public class WatchlistSyncService
                 var tvdbId = show.Ids.Tvdb.Value;
 
                 // Check if already in library (any season)
-                var existingSeries = _localLibrary.FindSeriesByTvdbId(tvdbId);
+                var existingSeries = _localLibrary.FindSeriesByAnyProviderId(tvdbId, show.Ids.Tmdb, show.Ids.Imdb);
                 if (existingSeries != null)
                 {
                     _logger.LogInformation(

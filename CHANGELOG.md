@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.9.3.0
+
+### Bug Fixes
+
+- **Seasons already in the library were offered again**, in the widget, the Next Seasons library and the watchlist sync
+  - All three asked "do I already have this show" by TVDB ID only, so a show Jellyfin identified through another provider was treated as absent — the same lookup gap behind the missing artwork. They now match on TVDB, TMDB or IMDB
+  - Expect the Next Seasons library and widget to shrink after the next sync if you have TMDB-matched shows: what disappears is seasons you already have
+
+### Improvements
+
+- **Widget artwork now comes from Jellyfin's own metadata providers**, the same source as every other image on the home screen
+  - Shows the library has no wide artwork for — and shows not in the library at all — used to fall straight through to Trakt, whose images are a different quality and style to the rest of the page. The image endpoint now asks Jellyfin's configured providers first (TMDB, TheTVDB, whatever the server uses), preferring a backdrop, then a thumbnail, then a poster, and only falls back to Trakt when they have nothing
+  - A show in the library is looked up as its real library item, so the providers see the server's metadata language and library options. A show not in the library is looked up by its IDs, which is all the image providers need
+  - A library poster is no longer preferred over a wide image from the providers: for a 16:9 card the poster is the worse picture, so it becomes the fallback the card uses if the provider lookup comes back empty
+  - Lookups stay lazy, behind the image request, and are cached for 7 days (12 hours for a show with no artwork), so a row of twelve cards never becomes twelve metadata lookups before anything is drawn
+
 ## v1.9.2.0
 
 ### Bug Fixes
