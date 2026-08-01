@@ -15,6 +15,7 @@
   - A show in the library is looked up as its real library item, so the providers see the server's metadata language and library options. A show not in the library is looked up by its IDs, which is all the image providers need
   - A library poster is no longer preferred over a wide image from the providers: for a 16:9 card the poster is the worse picture, so it becomes the fallback the card uses if the provider lookup comes back empty
   - Lookups stay lazy, behind the image request, and are cached for 7 days (12 hours for a show with no artwork), so a row of twelve cards never becomes twelve metadata lookups before anything is drawn
+  - Each candidate is checked before the browser is sent to it, and the next one is tried if it does not load. A metadata entry with no file path produces a well-formed URL that 404s; redirecting the card to it would waste the card, because by then the remaining sources are out of reach. The check costs one request per show per week, and the log says at debug level which source a show's picture came from
 
 ## v1.9.2.0
 
