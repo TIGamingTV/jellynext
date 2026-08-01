@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.9.6.0
+
+### Bug Fixes
+
+- **Widget cards showed no picture at all in the desktop app, and an episode still in the browser**
+  - The cards took their width and shape from Jellyfin's own card classes. Where a client does not apply them the card collapses to the width of its title and the artwork, which is sized as a percentage of that width, disappears entirely — leaving a column of bare titles. The widget now sets its own card width and aspect ratio, and only inherits the client's theme (fonts, colours, corners, hover), so the row looks the same everywhere
+  - Artwork preferred a backdrop, then a thumbnail, then a poster. A series thumbnail is frequently a scene still, which is why cards looked like they were showing a random episode. Cards are now portrait — what is being offered is a season, and a season's picture is a poster wherever there is one — and posters are preferred over the 16:9 images
+
+### Improvements
+
+- **Cards now show the season's own artwork where Jellyfin has it**, instead of always showing the show's. The image endpoint resolves, in order: the season as a library item (with "display missing episodes" on, Jellyfin already holds the provider's poster for a season you have not downloaded); the season from your metadata providers, which is where a just-premiered season's poster comes from; the show in the library; the show from your metadata providers; and Trakt
+- **Library artwork is answered with a redirect rather than copied through the plugin**, so it goes through Jellyfin's own resizing and caching like every other picture on the page. Artwork from outside Jellyfin is still served by the plugin, which is what makes it reachable behind a strict `img-src` policy
+- **"Check Artwork" now reports the season as well as the show** — whether Jellyfin knows the season, which images it holds, and which step of the chain the picture actually came from
+
 ## v1.9.5.0
 
 ### Bug Fixes

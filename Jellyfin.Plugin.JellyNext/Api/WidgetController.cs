@@ -126,34 +126,71 @@ public class WidgetController : ControllerBase
     }
 
     /// <summary>
-    /// Serves a show's artwork, from Jellyfin's metadata providers or from Trakt.
+    /// Serves the artwork for one card: the season's picture where there is one, the show's otherwise.
     /// </summary>
     /// <param name="traktId">The Trakt show ID.</param>
     /// <returns>The image.</returns>
-    /// <remarks>
-    /// Deliberately anonymous: browsers do not attach Jellyfin's token to <c>img</c> requests, and the
-    /// response is public artwork. The bytes are served from here rather than redirected to, because a
-    /// browser that cannot reach the image host - a proxy sending <c>img-src 'self'</c>, an ad blocker,
-    /// filtered DNS - fails silently, leaving a blank card and nothing in the log.
-    /// </remarks>
     [HttpGet("Poster/{traktId}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status302Found)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult> GetPoster([FromRoute, Required] int traktId)
+    public Task<ActionResult> GetPoster([FromRoute, Required] int traktId)
+    {
+        return GetPosterInternal(traktId, null);
+    }
+
+    /// <summary>
+    /// Serves the artwork for one card of a specific season.
+    /// </summary>
+    /// <param name="traktId">The Trakt show ID.</param>
+    /// <param name="seasonNumber">The season being offered.</param>
+    /// <returns>The image.</returns>
+    /// <remarks>
+    /// Deliberately anonymous: browsers do not attach Jellyfin's token to <c>img</c> requests, and the
+    /// response is public artwork. Library artwork is answered with a same-origin redirect so it goes
+    /// through Jellyfin's own resizing and caching; anything from outside Jellyfin is served as bytes
+    /// from here, because a browser that cannot reach the image host - a proxy sending
+    /// <c>img-src 'self'</c>, an ad blocker, filtered DNS - fails silently, leaving a blank card and
+    /// nothing in the log.
+    /// </remarks>
+    [HttpGet("Poster/{traktId}/{seasonNumber}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status302Found)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public Task<ActionResult> GetSeasonPoster(
+        [FromRoute, Required] int traktId,
+        [FromRoute, Required] int seasonNumber)
+    {
+        return GetPosterInternal(traktId, seasonNumber);
+    }
+
+    private async Task<ActionResult> GetPosterInternal(int traktId, int? seasonNumber)
     {
         if (Plugin.Instance?.Configuration.NextSeasonsWidgetEnabled != true)
         {
             return NotFound();
         }
 
-        var image = await _widgetService.GetImageAsync(traktId);
+        var image = await _widgetService.ResolveImageAsync(traktId, seasonNumber);
         if (image == null)
         {
             return NotFound();
         }
 
+        if (!string.IsNullOrEmpty(image.LibraryImagePath))
+        {
+            // "~/" so the redirect survives Jellyfin being hosted under a base path.
+            return LocalRedirect("~/" + image.LibraryImagePath);
+        }
+
+        var content = await _widgetService.FetchExternalImageAsync(image.ExternalUrl!, traktId, seasonNumber);
+        if (content == null)
+        {
+            return NotFound();
+        }
+
         Response.Headers.CacheControl = "public, max-age=86400";
-        return File(image.Value.Content, image.Value.ContentType);
+        return File(content.Value.Content, content.Value.ContentType);
     }
 
     /// <summary>

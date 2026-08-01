@@ -7,11 +7,11 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.JellyNext.Helpers;
 using Jellyfin.Plugin.JellyNext.Models.Common;
 using Jellyfin.Plugin.JellyNext.Services.DownloadProviders;
-using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Common.Net;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Providers;
@@ -33,14 +33,20 @@ public class NextSeasonsWidgetService
     private const string ProviderName = "nextseasons";
 
     /// <summary>
-    /// How long a looked up poster URL is reused before Trakt is asked again.
+    /// How many candidates are checked before giving up, so a show with a lot of bad artwork cannot
+    /// hold up the request.
     /// </summary>
-    private static readonly TimeSpan PosterCacheDuration = TimeSpan.FromDays(7);
+    private const int MaxImageChecks = 4;
 
     /// <summary>
-    /// How long a show with no artwork on Trakt is left alone before trying again.
+    /// How long a resolved image is reused before it is looked up again.
     /// </summary>
-    private static readonly TimeSpan PosterMissCacheDuration = TimeSpan.FromHours(12);
+    private static readonly TimeSpan ImageCacheDuration = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// How long a show with no artwork anywhere is left alone before trying again.
+    /// </summary>
+    private static readonly TimeSpan ImageMissCacheDuration = TimeSpan.FromHours(12);
 
     /// <summary>
     /// How long to wait for an image host to answer before treating the artwork as unusable.
@@ -53,22 +59,18 @@ public class NextSeasonsWidgetService
     private static readonly TimeSpan ImageFetchTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>
-    /// How many candidates are checked before giving up, so a show with a lot of bad artwork cannot
-    /// hold up the request.
-    /// </summary>
-    private const int MaxImageChecks = 4;
-
-    /// <summary>
-    /// Library image types in the order the widget wants them.
+    /// Image types in the order the widget wants them.
     /// </summary>
     /// <remarks>
-    /// Backdrop before Thumb: both are 16:9, but a series thumbnail is often a scene still that reads
-    /// as "some episode" rather than as the show, while a backdrop is always key art. The poster is
-    /// last - it fits the card badly, but a recognisable image beats a blank tile.
+    /// The cards are portrait, because the thing being offered is a season and a season's picture is a
+    /// poster everywhere Jellyfin and the metadata providers show one. So the poster comes first. A
+    /// thumbnail or a backdrop is only taken when there is no poster: both are 16:9, and a series
+    /// thumbnail in particular is frequently a scene still that reads as a random episode rather than
+    /// as the show - which is exactly what the widget used to put on every card.
     /// </remarks>
     private static readonly ImageType[] PreferredImageTypes =
     {
-        ImageType.Backdrop, ImageType.Thumb, ImageType.Primary
+        ImageType.Primary, ImageType.Thumb, ImageType.Backdrop
     };
 
     private readonly ILogger<NextSeasonsWidgetService> _logger;
@@ -83,11 +85,11 @@ public class NextSeasonsWidgetService
     // season" is the library, which the next content sync re-checks. This only keeps the button from
     // reading "Request" again the moment after it was pressed.
     private readonly ConcurrentDictionary<Guid, ConcurrentDictionary<string, DateTime>> _requested = new();
-    private readonly ConcurrentDictionary<int, CachedPoster> _posterCache = new();
+    private readonly ConcurrentDictionary<string, CachedImage> _imageCache = new();
 
     // What the image endpoint needs to look a show up, recorded while the list is built. The endpoint
-    // is reached by an anonymous <img> request carrying nothing but a Trakt ID, and it always follows
-    // a render of the list, so this is populated by the time it is read.
+    // is reached by an anonymous <img> request carrying nothing but a Trakt ID and a season number,
+    // and it always follows a render of the list, so this is populated by the time it is read.
     private readonly ConcurrentDictionary<int, ShowImageLookup> _imageLookups = new();
 
     /// <summary>
@@ -204,91 +206,67 @@ public class NextSeasonsWidgetService
     }
 
     /// <summary>
-    /// Resolves artwork for a show the Jellyfin library has no usable image for.
+    /// Picks the artwork for one card: the season's own picture where there is one, the show's
+    /// otherwise.
     /// </summary>
     /// <param name="traktId">The Trakt show ID.</param>
-    /// <returns>An absolute image URL, or null when no artwork is available anywhere.</returns>
+    /// <param name="seasonNumber">The season being offered, if the caller knows it.</param>
+    /// <returns>What to show, or null when there is no artwork anywhere.</returns>
     /// <remarks>
-    /// Jellyfin's own metadata providers are asked first, so the picture comes from the same place as
-    /// every other image on the home screen and looks like it belongs there; Trakt is the backstop for
-    /// shows those providers cannot illustrate. Resolved lazily behind the redirect endpoint rather
-    /// than while building the list, so a row of twelve cards never turns into twelve metadata lookups
-    /// before anything is drawn.
+    /// The whole chain lives on the server so that a card has exactly one URL to load and the client
+    /// never has to know where the picture came from. In order:
+    /// <list type="number">
+    /// <item>the season as Jellyfin already knows it - with "display missing episodes" on, the season
+    /// the user has not downloaded yet still exists as an item carrying the provider's season poster;</item>
+    /// <item>the season as Jellyfin's metadata providers describe it, which is where a season poster
+    /// comes from when the library has no entity for it yet - the usual case for a season that has
+    /// just premiered;</item>
+    /// <item>the show in the library, which is the same artwork the rest of the home screen shows;</item>
+    /// <item>the show from the metadata providers, for a show the user does not have at all;</item>
+    /// <item>Trakt, as the backstop.</item>
+    /// </list>
+    /// Steps 1 and 3 are library items and are answered with a Jellyfin image path, so the browser
+    /// loads them through the server's own resizing and caching rather than through this plugin.
     /// </remarks>
-    public async Task<string?> GetExternalImageUrlAsync(int traktId)
+    public async Task<WidgetImage?> ResolveImageAsync(int traktId, int? seasonNumber)
     {
-        if (_posterCache.TryGetValue(traktId, out var cached) && !cached.IsExpired)
+        var cacheKey = GetImageCacheKey(traktId, seasonNumber);
+        if (_imageCache.TryGetValue(cacheKey, out var cached) && !cached.IsExpired)
         {
-            return cached.Url;
+            return cached.Image;
         }
 
         _imageLookups.TryGetValue(traktId, out var lookup);
-        var title = lookup?.Title ?? "unknown show";
+        var image = await ResolveImageUncachedAsync(traktId, seasonNumber, lookup).ConfigureAwait(false);
 
-        var url = await FirstImageThatLoadsAsync(
-            await GetProviderImageCandidatesAsync(lookup).ConfigureAwait(false),
-            "a metadata provider",
-            title).ConfigureAwait(false);
-
-        if (url == null)
-        {
-            var traktUrl = await GetTraktImageUrlAsync(traktId).ConfigureAwait(false);
-            url = await FirstImageThatLoadsAsync(
-                traktUrl == null ? Array.Empty<string>() : new[] { traktUrl },
-                "Trakt",
-                title).ConfigureAwait(false);
-        }
-
-        if (url == null)
+        if (image == null)
         {
             // Worth saying out loud: a card with no artwork is the most visible failure the widget
-            // has. Logged at most once every PosterMissCacheDuration per show.
+            // has. Logged at most once every ImageMissCacheDuration per season.
             _logger.LogInformation(
-                "No artwork available for {Title} (Trakt {TraktId}) from Jellyfin's metadata providers "
-                + "or Trakt; the widget will show a plain tile",
-                title,
+                "No artwork available for {Title} season {Season} (Trakt {TraktId}) from the library, "
+                + "Jellyfin's metadata providers or Trakt; the widget will show a plain tile",
+                lookup?.Title ?? "unknown show",
+                seasonNumber,
                 traktId);
         }
 
-        _posterCache[traktId] = new CachedPoster
+        _imageCache[cacheKey] = new CachedImage
         {
-            Url = url,
-            ExpiresAt = DateTime.UtcNow + (url == null ? PosterMissCacheDuration : PosterCacheDuration)
+            Image = image,
+            ExpiresAt = DateTime.UtcNow + (image == null ? ImageMissCacheDuration : ImageCacheDuration)
         };
 
-        return url;
+        return image;
     }
 
     /// <summary>
-    /// Returns the first candidate that actually serves an image.
+    /// Fetches artwork that lives outside Jellyfin so the plugin can serve it itself.
     /// </summary>
-    /// <remarks>
-    /// A URL that a provider offers is not necessarily one that resolves - a metadata entry with no
-    /// file path produces a well-formed URL that 404s. Redirecting the browser to it would waste the
-    /// card, because by then the remaining candidates are out of reach, so each one is checked here
-    /// while there is still something else to try. Only paid once per show, on a cache miss.
-    /// </remarks>
-    private async Task<string?> FirstImageThatLoadsAsync(IEnumerable<string> candidates, string source, string title)
-    {
-        foreach (var candidate in candidates.Where(url => !string.IsNullOrWhiteSpace(url)).Take(MaxImageChecks))
-        {
-            if (await IsReachableAsync(candidate).ConfigureAwait(false))
-            {
-                _logger.LogDebug("Artwork for {Title} came from {Source}: {Url}", title, source, candidate);
-                return candidate;
-            }
-
-            _logger.LogDebug("Artwork candidate for {Title} from {Source} did not load: {Url}", title, source, candidate);
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Fetches a show's artwork so Jellyfin can serve it itself.
-    /// </summary>
-    /// <param name="traktId">The Trakt show ID.</param>
-    /// <returns>The image bytes and content type, or null when there is no artwork to serve.</returns>
+    /// <param name="url">The external image URL, as resolved by <see cref="ResolveImageAsync"/>.</param>
+    /// <param name="traktId">The Trakt show ID, so a dead URL can be dropped from the cache.</param>
+    /// <param name="seasonNumber">The season the URL was resolved for.</param>
+    /// <returns>The image bytes and content type, or null when it could not be fetched.</returns>
     /// <remarks>
     /// The card used to be redirected to the image host, which fails invisibly whenever the browser
     /// cannot reach it - a reverse proxy sending <c>Content-Security-Policy: img-src 'self'</c>, an ad
@@ -296,14 +274,9 @@ public class NextSeasonsWidgetService
     /// successful lookup. Serving the bytes from here makes the picture as reachable as the rest of
     /// the library's artwork, which the browser is already loading.
     /// </remarks>
-    public async Task<(byte[] Content, string ContentType)?> GetImageAsync(int traktId)
+    public async Task<(byte[] Content, string ContentType)?> FetchExternalImageAsync(
+        string url, int traktId, int? seasonNumber)
     {
-        var url = await GetExternalImageUrlAsync(traktId).ConfigureAwait(false);
-        if (string.IsNullOrEmpty(url))
-        {
-            return null;
-        }
-
         try
         {
             using var httpClient = _httpClientFactory.CreateClient(NamedClient.Default);
@@ -314,7 +287,7 @@ public class NextSeasonsWidgetService
             {
                 // The URL passed its check when it was resolved, so this is artwork that has gone away
                 // since. Drop it so the next request resolves again instead of serving nothing forever.
-                _posterCache.TryRemove(traktId, out _);
+                _imageCache.TryRemove(GetImageCacheKey(traktId, seasonNumber), out _);
                 _logger.LogDebug(
                     "Artwork for Trakt show {TraktId} is no longer available at {Url} ({Status})",
                     traktId,
@@ -333,6 +306,86 @@ public class NextSeasonsWidgetService
             _logger.LogDebug(ex, "Could not fetch the artwork for Trakt show {TraktId} from {Url}", traktId, url);
             return null;
         }
+    }
+
+    private async Task<WidgetImage?> ResolveImageUncachedAsync(
+        int traktId, int? seasonNumber, ShowImageLookup? lookup)
+    {
+        var title = lookup?.Title ?? "unknown show";
+        var series = lookup?.LibraryItemId is Guid libraryItemId
+            ? _localLibraryService.FindItemById(libraryItemId) as Series
+            : null;
+
+        if (series != null && seasonNumber.HasValue)
+        {
+            var season = _localLibraryService.FindSeason(series, seasonNumber.Value);
+            var seasonImage = BuildLibraryImagePath(season);
+            if (seasonImage != null)
+            {
+                _logger.LogDebug("Artwork for {Title} came from the season in the library", title);
+                return new WidgetImage { LibraryImagePath = seasonImage, Source = "library season" };
+            }
+
+            var seasonUrl = await FirstImageThatLoadsAsync(
+                await GetSeasonImageCandidatesAsync(series, season, seasonNumber.Value).ConfigureAwait(false),
+                "a metadata provider (season)",
+                title).ConfigureAwait(false);
+
+            if (seasonUrl != null)
+            {
+                return new WidgetImage { ExternalUrl = seasonUrl, Source = "metadata provider (season)" };
+            }
+        }
+
+        var seriesImage = BuildLibraryImagePath(series);
+        if (seriesImage != null)
+        {
+            _logger.LogDebug("Artwork for {Title} came from the show in the library", title);
+            return new WidgetImage { LibraryImagePath = seriesImage, Source = "library show" };
+        }
+
+        var showUrl = await FirstImageThatLoadsAsync(
+            await GetShowImageCandidatesAsync(lookup, series).ConfigureAwait(false),
+            "a metadata provider",
+            title).ConfigureAwait(false);
+
+        if (showUrl != null)
+        {
+            return new WidgetImage { ExternalUrl = showUrl, Source = "metadata provider (show)" };
+        }
+
+        var traktUrl = await GetTraktImageUrlAsync(traktId).ConfigureAwait(false);
+        traktUrl = await FirstImageThatLoadsAsync(
+            traktUrl == null ? Array.Empty<string>() : new[] { traktUrl },
+            "Trakt",
+            title).ConfigureAwait(false);
+
+        return traktUrl == null ? null : new WidgetImage { ExternalUrl = traktUrl, Source = "Trakt" };
+    }
+
+    /// <summary>
+    /// Returns the first candidate that actually serves an image.
+    /// </summary>
+    /// <remarks>
+    /// A URL that a provider offers is not necessarily one that resolves - a metadata entry with no
+    /// file path produces a well-formed URL that 404s. Handing the browser one of those would waste
+    /// the card, because by then the remaining candidates are out of reach, so each one is checked
+    /// here while there is still something else to try. Only paid once per season, on a cache miss.
+    /// </remarks>
+    private async Task<string?> FirstImageThatLoadsAsync(IEnumerable<string> candidates, string source, string title)
+    {
+        foreach (var candidate in candidates.Where(url => !string.IsNullOrWhiteSpace(url)).Take(MaxImageChecks))
+        {
+            if (await IsReachableAsync(candidate).ConfigureAwait(false))
+            {
+                _logger.LogDebug("Artwork for {Title} came from {Source}: {Url}", title, source, candidate);
+                return candidate;
+            }
+
+            _logger.LogDebug("Artwork candidate for {Title} from {Source} did not load: {Url}", title, source, candidate);
+        }
+
+        return null;
     }
 
     private async Task<bool> IsReachableAsync(string url)
@@ -371,7 +424,44 @@ public class NextSeasonsWidgetService
     }
 
     /// <summary>
-    /// Asks Jellyfin's configured metadata providers for the show's artwork.
+    /// Asks Jellyfin's metadata providers for the season's own artwork.
+    /// </summary>
+    /// <remarks>
+    /// The season image providers key off the parent series' provider IDs and the season index, so
+    /// they need a season that can find its series - which is why this only runs for a show that is in
+    /// the library. Jellyfin's own season item is used as the probe where one exists, so the providers
+    /// see the library's metadata language and options; otherwise a detached season pointed at the
+    /// real series stands in.
+    /// </remarks>
+    private async Task<IReadOnlyList<string>> GetSeasonImageCandidatesAsync(
+        Series series, Season? season, int seasonNumber)
+    {
+        try
+        {
+            var probe = season ?? new Season
+            {
+                Name = string.Create(CultureInfo.InvariantCulture, $"Season {seasonNumber}"),
+                IndexNumber = seasonNumber,
+                SeriesId = series.Id,
+                ParentId = series.Id,
+                SeriesName = series.Name
+            };
+
+            var images = await _providerManager
+                .GetAvailableRemoteImages(probe, new RemoteImageQuery(string.Empty), CancellationToken.None)
+                .ConfigureAwait(false);
+
+            return PickImagesByPreference(images).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Season artwork lookup failed for {Title} season {Season}", series.Name, seasonNumber);
+            return Array.Empty<string>();
+        }
+    }
+
+    /// <summary>
+    /// Asks Jellyfin's metadata providers for the show's artwork.
     /// </summary>
     /// <remarks>
     /// For a show in the library the real item is passed, so the providers see the user's metadata
@@ -380,7 +470,7 @@ public class NextSeasonsWidgetService
     /// membership. If that is ever rejected, the identify-style search is asked instead, which only
     /// needs a name and an ID.
     /// </remarks>
-    private async Task<IReadOnlyList<string>> GetProviderImageCandidatesAsync(ShowImageLookup? lookup)
+    private async Task<IReadOnlyList<string>> GetShowImageCandidatesAsync(ShowImageLookup? lookup, Series? series)
     {
         if (lookup == null)
         {
@@ -391,11 +481,7 @@ public class NextSeasonsWidgetService
 
         try
         {
-            var item = lookup.LibraryItemId.HasValue
-                ? _localLibraryService.FindItemById(lookup.LibraryItemId.Value)
-                : null;
-
-            item ??= BuildProbeSeries(lookup);
+            BaseItem item = series ?? BuildProbeSeries(lookup);
 
             var images = await _providerManager
                 .GetAvailableRemoteImages(item, new RemoteImageQuery(string.Empty), CancellationToken.None)
@@ -465,7 +551,7 @@ public class NextSeasonsWidgetService
     }
 
     /// <summary>
-    /// Orders the provider's images the same way the library's are preferred, best of each type first.
+    /// Orders a provider's images the same way the library's are preferred, best of each type first.
     /// </summary>
     private static IEnumerable<string> PickImagesByPreference(IEnumerable<RemoteImageInfo> images)
     {
@@ -479,6 +565,34 @@ public class NextSeasonsWidgetService
                 .FirstOrDefault())
             .Where(image => image != null)
             .Select(image => image!.Url);
+    }
+
+    /// <summary>
+    /// Builds the Jellyfin image path for a library item's best available artwork.
+    /// </summary>
+    /// <remarks>
+    /// Only the width is constrained. Asking for a height as well makes Jellyfin crop to that exact
+    /// box, which turns a 16:9 backdrop into a slice of itself when the card is portrait; leaving the
+    /// aspect ratio alone lets the client decide whether to cover or contain.
+    /// </remarks>
+    private static string? BuildLibraryImagePath(BaseItem? item)
+    {
+        if (item == null)
+        {
+            return null;
+        }
+
+        foreach (var imageType in PreferredImageTypes)
+        {
+            if (item.HasImage(imageType, 0))
+            {
+                return string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Items/{item.Id:N}/Images/{imageType}?fillWidth=400&quality=90");
+            }
+        }
+
+        return null;
     }
 
     private static Dictionary<string, string> BuildProviderIds(ShowImageLookup lookup)
@@ -537,6 +651,7 @@ public class NextSeasonsWidgetService
                 TvdbId = item.TvdbId,
                 TmdbId = contentItem?.TmdbId,
                 ImdbId = contentItem?.ImdbId,
+                SeasonNumber = item.SeasonNumber,
                 ImagePath = item.ImagePath,
                 FallbackImagePath = item.FallbackImagePath
             };
@@ -549,10 +664,14 @@ public class NextSeasonsWidgetService
                 if (series != null)
                 {
                     diagnostics.LibraryItemId = series.Id.ToString("N", CultureInfo.InvariantCulture);
-                    diagnostics.LibraryImages = PreferredImageTypes
-                        .Where(imageType => series.HasImage(imageType, 0))
-                        .Select(imageType => imageType.ToString())
-                        .ToArray();
+                    diagnostics.LibraryImages = ListImages(series);
+
+                    var season = _localLibraryService.FindSeason(series, item.SeasonNumber);
+                    if (season != null)
+                    {
+                        diagnostics.SeasonItemId = season.Id.ToString("N", CultureInfo.InvariantCulture);
+                        diagnostics.SeasonImages = ListImages(season);
+                    }
                 }
             }
             catch (Exception ex)
@@ -562,7 +681,9 @@ public class NextSeasonsWidgetService
 
             if (item.TraktId != 0)
             {
-                diagnostics.ResolvedExternalUrl = await GetExternalImageUrlAsync(item.TraktId).ConfigureAwait(false);
+                var resolved = await ResolveImageAsync(item.TraktId, item.SeasonNumber).ConfigureAwait(false);
+                diagnostics.ResolvedSource = resolved?.Source;
+                diagnostics.ResolvedUrl = resolved?.ExternalUrl ?? resolved?.LibraryImagePath;
             }
 
             report.Add(diagnostics);
@@ -571,28 +692,45 @@ public class NextSeasonsWidgetService
         return report;
     }
 
+    private static string[] ListImages(BaseItem item)
+    {
+        return PreferredImageTypes
+            .Where(imageType => item.HasImage(imageType, 0))
+            .Select(imageType => imageType.ToString())
+            .ToArray();
+    }
+
     private static string GetRequestKey(int traktId, int seasonNumber)
     {
         return string.Create(CultureInfo.InvariantCulture, $"{traktId}:{seasonNumber}");
     }
 
+    private static string GetImageCacheKey(int traktId, int? seasonNumber)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"{traktId}:{seasonNumber?.ToString(CultureInfo.InvariantCulture) ?? "show"}");
+    }
+
     /// <summary>
-    /// Picks the artwork for a card: the show's own images from the Jellyfin library, with Trakt as a
-    /// second chance.
+    /// Records what the artwork endpoint will need, and points the card at it.
     /// </summary>
     /// <remarks>
-    /// The library is preferred because the show itself is normally there - the user watched an
-    /// earlier season - and it is the same artwork the rest of their home screen shows. Both paths are
-    /// returned so the widget can retry with Trakt if the library image turns out to be missing.
+    /// The card gets a single plugin URL rather than a library path, because only the server can tell
+    /// whether the better picture is the season's or the show's, and resolving that while the list is
+    /// built would turn a row of twelve cards into twelve metadata lookups before anything is drawn.
+    /// The library's own image path is still handed over as a fallback, so a card is never blank while
+    /// the show sits in the library with artwork on it.
     /// </remarks>
     private (string? ImagePath, string? FallbackImagePath) GetImagePaths(ContentItem item)
     {
-        var externalPath = item.TraktId == 0
+        var seasonNumber = item.SeasonNumber ?? 0;
+
+        var pluginPath = item.TraktId == 0
             ? null
-            : string.Create(CultureInfo.InvariantCulture, $"JellyNext/Widget/Poster/{item.TraktId}");
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"JellyNext/Widget/Poster/{item.TraktId}/{seasonNumber}");
 
         string? libraryPath = null;
-        var libraryImageIsWide = false;
         Guid? libraryItemId = null;
 
         try
@@ -601,18 +739,8 @@ public class NextSeasonsWidgetService
             if (series != null)
             {
                 libraryItemId = series.Id;
-
-                foreach (var imageType in PreferredImageTypes)
-                {
-                    if (series.HasImage(imageType, 0))
-                    {
-                        libraryPath = string.Create(
-                            CultureInfo.InvariantCulture,
-                            $"Items/{series.Id:N}/Images/{imageType}?fillWidth=560&fillHeight=315&quality=90");
-                        libraryImageIsWide = imageType != ImageType.Primary;
-                        break;
-                    }
-                }
+                libraryPath = BuildLibraryImagePath(_localLibraryService.FindSeason(series, seasonNumber))
+                    ?? BuildLibraryImagePath(series);
 
                 if (libraryPath == null)
                 {
@@ -638,7 +766,7 @@ public class NextSeasonsWidgetService
             };
         }
 
-        if (libraryPath == null && externalPath == null)
+        if (libraryPath == null && pluginPath == null)
         {
             // Nothing to even attempt: the card can only be a name tile, and no image request will be
             // made, so without this the failure leaves no trace on the server at all.
@@ -651,12 +779,32 @@ public class NextSeasonsWidgetService
                 item.ImdbId ?? "none");
         }
 
-        // A poster is the library's least useful image for a 16:9 card, so a wide one from the
-        // metadata providers is tried ahead of it and the poster becomes the backstop. Wide library
-        // artwork always wins - it is the picture the rest of the home screen is already showing.
-        return libraryImageIsWide
-            ? (libraryPath, externalPath)
-            : (externalPath ?? libraryPath, externalPath == null ? null : libraryPath);
+        return (pluginPath ?? libraryPath, pluginPath == null ? null : libraryPath);
+    }
+
+    /// <summary>
+    /// Where one card's artwork lives.
+    /// </summary>
+    public class WidgetImage
+    {
+        /// <summary>
+        /// Gets or sets the Jellyfin API path of a library item's image, if that is the best picture.
+        /// </summary>
+        /// <remarks>
+        /// Answered as a same-origin redirect rather than copied through the plugin, so the image goes
+        /// through Jellyfin's own resizing and caching like every other picture on the page.
+        /// </remarks>
+        public string? LibraryImagePath { get; set; }
+
+        /// <summary>
+        /// Gets or sets the URL of artwork outside Jellyfin, which the plugin serves itself.
+        /// </summary>
+        public string? ExternalUrl { get; set; }
+
+        /// <summary>
+        /// Gets or sets a short description of where the picture came from, for diagnostics.
+        /// </summary>
+        public string? Source { get; set; }
     }
 
     /// <summary>
@@ -679,11 +827,20 @@ public class NextSeasonsWidgetService
         /// <summary>Gets or sets the IMDB ID.</summary>
         public string? ImdbId { get; set; }
 
+        /// <summary>Gets or sets the season being offered.</summary>
+        public int SeasonNumber { get; set; }
+
         /// <summary>Gets or sets the matched library item ID, if the show is in the library.</summary>
         public string? LibraryItemId { get; set; }
 
         /// <summary>Gets or sets the image types the library item actually holds.</summary>
         public string[] LibraryImages { get; set; } = Array.Empty<string>();
+
+        /// <summary>Gets or sets the matched season item ID, if Jellyfin knows the season.</summary>
+        public string? SeasonItemId { get; set; }
+
+        /// <summary>Gets or sets the image types the season item actually holds.</summary>
+        public string[] SeasonImages { get; set; } = Array.Empty<string>();
 
         /// <summary>Gets or sets the path the card loads first.</summary>
         public string? ImagePath { get; set; }
@@ -691,8 +848,11 @@ public class NextSeasonsWidgetService
         /// <summary>Gets or sets the path the card falls back to.</summary>
         public string? FallbackImagePath { get; set; }
 
-        /// <summary>Gets or sets what the metadata providers and Trakt resolved to.</summary>
-        public string? ResolvedExternalUrl { get; set; }
+        /// <summary>Gets or sets which step of the chain produced the picture.</summary>
+        public string? ResolvedSource { get; set; }
+
+        /// <summary>Gets or sets what that step resolved to.</summary>
+        public string? ResolvedUrl { get; set; }
 
         /// <summary>Gets or sets the error, if the lookup itself failed.</summary>
         public string? Error { get; set; }
@@ -716,9 +876,9 @@ public class NextSeasonsWidgetService
         public Guid? LibraryItemId { get; init; }
     }
 
-    private sealed class CachedPoster
+    private sealed class CachedImage
     {
-        public string? Url { get; init; }
+        public WidgetImage? Image { get; init; }
 
         public DateTime ExpiresAt { get; init; }
 

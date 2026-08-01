@@ -10,11 +10,15 @@
  * section is (re)inserted by watching the DOM.
  *
  * Cards are built from Jellyfin's own card markup (card / cardBox / cardScalable / cardPadder /
- * cardImageContainer / cardText) so the row is the same size, shape and alignment as the home
- * screen's own rows in whatever theme and viewport the user has - reimplementing that means copying
- * a stack of viewport media queries and getting it subtly wrong. Only the request button and the
- * season badge are styled here. If those classes ever stop existing, a probe detects it and a
- * self-contained fallback stylesheet takes over.
+ * cardImageContainer / cardText) so they inherit the client's theme - fonts, colours, corners,
+ * hover. Their geometry, though, is set here rather than inherited: the width of a home screen card
+ * comes from a shape class (.overflowPortraitCard and friends) that not every client applies, and
+ * where it is missing the card collapses to the width of its title and the artwork disappears
+ * entirely - which is what the desktop app was showing. Owning the width and the aspect ratio costs
+ * a handful of media queries and makes the row look the same everywhere.
+ *
+ * The cards are portrait because what is being offered is a season, and a season's picture is a
+ * poster wherever Jellyfin and the metadata providers have one.
  */
 (function () {
     'use strict';
@@ -22,7 +26,6 @@
     var ITEMS_ENDPOINT = 'JellyNext/Widget/NextSeasons';
     var REQUEST_ENDPOINT = 'JellyNext/Widget/Request';
     var SECTION_CLASS = 'jellynextSection';
-    var FALLBACK_CLASS = 'jellynextFallback';
     var STYLE_ID = 'jellynextWidgetStyles';
     var DATA_TTL_MS = 5 * 60 * 1000;
     var RESCAN_DELAY_MS = 300;
@@ -35,40 +38,50 @@
         scheduled: false
     };
 
+    // Every geometry rule is scoped under .jellynextCard so it outranks the client's single-class
+    // card rules whether or not they are present - the stylesheet is appended to <head> after them,
+    // and two classes beat one.
     var STYLES = [
-        // Ours: the row itself, the artwork inside Jellyfin's image container, and the button.
-        '.jellynextRow { display: flex; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }',
-        '.jellynextImage { display: flex; align-items: center; justify-content: center;',
-        '    background: rgba(127,127,127,.22); }',
-        '.jellynextImage img { width: 100%; height: 100%; object-fit: cover; display: block; }',
-        '.jellynextImage img.jellynextContain { object-fit: contain; }',
+        '.jellynextRow { display: flex; flex-wrap: nowrap; align-items: flex-start;',
+        '    overflow-x: auto; scrollbar-width: thin; }',
+
+        // Card size. Mirrors the proportions of Jellyfin's own portrait rows, but does not depend on
+        // the client applying a shape class for the card to have a width at all.
+        '.jellynextCard { box-sizing: border-box; flex: 0 0 auto; width: 42vw; }',
+        '@media (min-width: 40em) { .jellynextCard { width: 27vw; } }',
+        '@media (min-width: 50em) { .jellynextCard { width: 22vw; } }',
+        '@media (min-width: 60em) { .jellynextCard { width: 17vw; } }',
+        '@media (min-width: 80em) { .jellynextCard { width: 14vw; } }',
+        '@media (min-width: 100em) { .jellynextCard { width: 12vw; } }',
+        '@media (min-width: 120em) { .jellynextCard { width: 10vw; } }',
+
+        '.jellynextCard .cardBox { margin: 0 .3em; }',
+        '.jellynextCard .cardScalable { position: relative; display: block; width: 100%; }',
+        '.jellynextCard .cardPadder { padding-bottom: 150%; }',
+        '.jellynextCard .cardText { white-space: nowrap; overflow: hidden; text-overflow: ellipsis;',
+        '    padding: .1em 0; }',
+        '.jellynextCard .cardText-secondary { font-size: 86%; opacity: .75; }',
+
+        // The artwork, inside Jellyfin's image container.
+        '.jellynextCard .jellynextImage { position: absolute; top: 0; left: 0; right: 0; bottom: 0;',
+        '    overflow: hidden; border-radius: .2em; display: flex; align-items: center;',
+        '    justify-content: center; background: rgba(127,127,127,.22); }',
+        '.jellynextCard .jellynextImage img { width: 100%; height: 100%; object-fit: cover;',
+        '    display: block; }',
+        '.jellynextCard .jellynextImage img.jellynextContain { object-fit: contain; }',
         '.jellynextPlaceholder { padding: .6em; font-size: 1em; font-weight: 600; opacity: .6;',
         '    text-align: center; line-height: 1.25; overflow: hidden; display: -webkit-box;',
         '    -webkit-line-clamp: 3; -webkit-box-orient: vertical; }',
-        '.jellynextImage .jellynextBadge { position: absolute; top: .4em; left: .4em; z-index: 1;',
+        '.jellynextCard .jellynextBadge { position: absolute; top: .4em; left: .4em; z-index: 1;',
         '    padding: .15em .45em; border-radius: .3em; background: rgba(0,0,0,.72); color: #fff;',
         '    font-size: .8em; font-weight: 600; }',
+
         '.jellynextButton { display: block; width: 100%; margin-top: .5em; padding: .5em .2em;',
         '    border: 0; border-radius: .3em; font-size: .85em; font-weight: 600; cursor: pointer;',
         '    color: #fff; background: var(--accent, #00a4dc); font-family: inherit; }',
         '.jellynextButton:hover:not(:disabled) { filter: brightness(1.12); }',
         '.jellynextButton:disabled { background: rgba(127,127,127,.3); color: inherit; opacity: .85;',
-        '    cursor: default; }',
-
-        // Only used when the web client's card stylesheet is not there to size the cards. Mirrors
-        // what those classes normally provide, so the widget degrades to a plain but tidy row.
-        '.' + FALLBACK_CLASS + ' .jellynextHeading { font-size: 1.3em; font-weight: 600;',
-        '    margin: .8em 0 .4em; padding: 0 .6em; }',
-        '.' + FALLBACK_CLASS + ' .jellynextRow { padding: 0 .6em 1em; }',
-        '.' + FALLBACK_CLASS + ' .jellynextCard { flex: 0 0 auto; width: 15em; }',
-        '.' + FALLBACK_CLASS + ' .cardBox { margin: .6em; }',
-        '.' + FALLBACK_CLASS + ' .cardScalable { position: relative; }',
-        '.' + FALLBACK_CLASS + ' .cardPadder { padding-bottom: 56.25%; }',
-        '.' + FALLBACK_CLASS + ' .cardImageContainer { position: absolute; top: 0; left: 0; right: 0;',
-        '    bottom: 0; overflow: hidden; border-radius: .2em; }',
-        '.' + FALLBACK_CLASS + ' .cardText { white-space: nowrap; overflow: hidden;',
-        '    text-overflow: ellipsis; padding: .06em 2px; }',
-        '.' + FALLBACK_CLASS + ' .cardText-secondary { font-size: 86%; opacity: .75; }'
+        '    cursor: default; }'
     ].join('\n');
 
     function addStyles() {
@@ -80,20 +93,6 @@
         style.id = STYLE_ID;
         style.textContent = STYLES;
         document.head.appendChild(style);
-    }
-
-    /**
-     * Detects whether the web client's card stylesheet is present, by measuring a class whose only
-     * job is to give a card its aspect ratio.
-     */
-    function hasNativeCardStyles() {
-        var probe = document.createElement('div');
-        probe.className = 'cardPadder cardPadder-overflowBackdrop';
-        probe.style.cssText = 'position:absolute;visibility:hidden;width:100px;top:-1000px;';
-        document.body.appendChild(probe);
-        var padding = parseFloat(window.getComputedStyle(probe).paddingBottom) || 0;
-        probe.remove();
-        return padding > 0;
     }
 
     function isSignedIn() {
@@ -210,10 +209,11 @@
             var image = document.createElement('img');
             image.loading = 'lazy';
             image.alt = '';
+            image.decoding = 'async';
             image.addEventListener('load', function () {
-                // A poster in a 16:9 card would be cropped down to a strip of itself, so portrait
-                // artwork is shown whole instead of filling the card.
-                if (image.naturalHeight > image.naturalWidth * 1.1) {
+                // The card is portrait, so a backdrop or a thumbnail - which is what the fallbacks
+                // come back as - would be cropped down to a strip of itself. Show it whole instead.
+                if (image.naturalWidth > image.naturalHeight * 1.1) {
                     image.classList.add('jellynextContain');
                 }
             });
@@ -243,7 +243,7 @@
 
     function buildCard(item) {
         var card = document.createElement('div');
-        card.className = 'card overflowBackdropCard jellynextCard';
+        card.className = 'card overflowPortraitCard jellynextCard';
 
         var box = document.createElement('div');
         box.className = 'cardBox cardBox-bottompadded';
@@ -252,7 +252,7 @@
         scalable.className = 'cardScalable';
 
         var padder = document.createElement('div');
-        padder.className = 'cardPadder cardPadder-overflowBackdrop';
+        padder.className = 'cardPadder cardPadder-overflowPortrait';
         scalable.appendChild(padder);
         scalable.appendChild(buildImage(item));
         box.appendChild(scalable);
@@ -320,10 +320,6 @@
         var section = document.createElement('div');
         section.className = 'verticalSection ' + SECTION_CLASS;
         section.style.display = 'none';
-
-        if (!hasNativeCardStyles()) {
-            section.classList.add(FALLBACK_CLASS);
-        }
 
         var heading = document.createElement('h2');
         heading.className = 'sectionTitle sectionTitle-cards padded-left jellynextHeading';
