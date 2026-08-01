@@ -3,8 +3,8 @@
     <h3 class="sectionTitle">New Season Emails</h3>
     <div class="fieldDescription" style="margin-bottom: 1em;">
         Emails a user when a new season of a show they watch is released. A season is announced once,
-        when it first appears in that user's Next Seasons library and has premiered recently or is
-        still airing — progressing through an old show does not trigger an email.
+        when it first appears in that user's Next Seasons library and was released recently —
+        progressing through an old show does not trigger an email.
         Requires "Sync Next Seasons" for the user, and an email address on the Trakt tab.
         Notifications are sent as part of the "Sync Trakt Content" scheduled task.
     </div>
@@ -23,9 +23,10 @@
         <label class="inputLabel inputLabelUnfocused" for="NewSeasonNotificationWindowDays">Announce Seasons Released Within (days):</label>
         <input is="emby-input" type="number" id="NewSeasonNotificationWindowDays" name="NewSeasonNotificationWindowDays" min="1" max="365" />
         <div class="fieldDescription">
-            How recently a season must have premiered to be announced (1-365, default: 30). A season
-            part-way through airing is always announced. This is separate from the per-user
-            "New Release Window" that filters the library itself.
+            How recently a season must have been released to be announced (1-365, default: 30).
+            Measured from the premiere, or from the most recent episode for a season that is still
+            airing. This is separate from the per-user "New Release Window" that filters the library
+            itself.
         </div>
     </div>
 </div>

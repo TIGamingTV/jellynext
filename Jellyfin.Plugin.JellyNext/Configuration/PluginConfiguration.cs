@@ -282,7 +282,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public string SmtpFromName { get; set; } = "JellyNext";
 
     /// <summary>
-    /// Gets or sets how many days after its premiere a season is still announced as new (1-365).
+    /// Gets or sets how many days after its latest release a season is still announced as new (1-365).
     /// </summary>
     /// <remarks>
     /// Independent of the per-user <c>NextSeasonsRecentDays</c> library filter: a user may want a
