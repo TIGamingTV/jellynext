@@ -125,10 +125,10 @@ public class WidgetController : ControllerBase
     }
 
     /// <summary>
-    /// Redirects to a show's poster on Trakt.
+    /// Redirects to a show's artwork, from Jellyfin's metadata providers or from Trakt.
     /// </summary>
     /// <param name="traktId">The Trakt show ID.</param>
-    /// <returns>A redirect to the poster.</returns>
+    /// <returns>A redirect to the artwork.</returns>
     /// <remarks>
     /// Deliberately anonymous: browsers do not attach Jellyfin's token to <c>img</c> requests, and the
     /// response is a redirect to public artwork.
@@ -143,7 +143,7 @@ public class WidgetController : ControllerBase
             return NotFound();
         }
 
-        var url = await _widgetService.GetTraktImageUrlAsync(traktId);
+        var url = await _widgetService.GetExternalImageUrlAsync(traktId);
         if (string.IsNullOrEmpty(url))
         {
             return NotFound();

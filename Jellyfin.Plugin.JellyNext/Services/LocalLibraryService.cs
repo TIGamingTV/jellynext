@@ -30,6 +30,16 @@ public class LocalLibraryService
     }
 
     /// <summary>
+    /// Gets a library item by its Jellyfin ID.
+    /// </summary>
+    /// <param name="itemId">The item ID.</param>
+    /// <returns>The item if it still exists, null otherwise.</returns>
+    public BaseItem? FindItemById(Guid itemId)
+    {
+        return _libraryManager.GetItemById(itemId);
+    }
+
+    /// <summary>
     /// Finds a TV series in the local library by any of the IDs known for it.
     /// </summary>
     /// <param name="tvdbId">The TVDB ID, if known.</param>

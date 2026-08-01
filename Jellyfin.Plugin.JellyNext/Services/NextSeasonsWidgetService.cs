@@ -3,11 +3,15 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyNext.Helpers;
 using Jellyfin.Plugin.JellyNext.Models.Common;
 using Jellyfin.Plugin.JellyNext.Services.DownloadProviders;
+using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Providers;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.JellyNext.Services;
@@ -53,12 +57,18 @@ public class NextSeasonsWidgetService
     private readonly LocalLibraryService _localLibraryService;
     private readonly DownloadProviderFactory _downloadProviderFactory;
     private readonly TraktApi _traktApi;
+    private readonly IProviderManager _providerManager;
 
     // Not persisted, like the watchlist's request tracking: the durable answer to "do I have this
     // season" is the library, which the next content sync re-checks. This only keeps the button from
     // reading "Request" again the moment after it was pressed.
     private readonly ConcurrentDictionary<Guid, ConcurrentDictionary<string, DateTime>> _requested = new();
     private readonly ConcurrentDictionary<int, CachedPoster> _posterCache = new();
+
+    // What the image endpoint needs to look a show up, recorded while the list is built. The endpoint
+    // is reached by an anonymous <img> request carrying nothing but a Trakt ID, and it always follows
+    // a render of the list, so this is populated by the time it is read.
+    private readonly ConcurrentDictionary<int, ShowImageLookup> _imageLookups = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NextSeasonsWidgetService"/> class.
@@ -68,18 +78,21 @@ public class NextSeasonsWidgetService
     /// <param name="localLibraryService">The local library service.</param>
     /// <param name="downloadProviderFactory">The download provider factory.</param>
     /// <param name="traktApi">The Trakt API service.</param>
+    /// <param name="providerManager">The metadata provider manager.</param>
     public NextSeasonsWidgetService(
         ILogger<NextSeasonsWidgetService> logger,
         ContentCacheService cacheService,
         LocalLibraryService localLibraryService,
         DownloadProviderFactory downloadProviderFactory,
-        TraktApi traktApi)
+        TraktApi traktApi,
+        IProviderManager providerManager)
     {
         _logger = logger;
         _cacheService = cacheService;
         _localLibraryService = localLibraryService;
         _downloadProviderFactory = downloadProviderFactory;
         _traktApi = traktApi;
+        _providerManager = providerManager;
     }
 
     /// <summary>
@@ -168,17 +181,119 @@ public class NextSeasonsWidgetService
     }
 
     /// <summary>
-    /// Resolves a show's artwork on Trakt, for shows the Jellyfin library has no image for.
+    /// Resolves artwork for a show the Jellyfin library has no usable image for.
     /// </summary>
     /// <param name="traktId">The Trakt show ID.</param>
-    /// <returns>An absolute image URL, or null when no artwork is available.</returns>
-    public async Task<string?> GetTraktImageUrlAsync(int traktId)
+    /// <returns>An absolute image URL, or null when no artwork is available anywhere.</returns>
+    /// <remarks>
+    /// Jellyfin's own metadata providers are asked first, so the picture comes from the same place as
+    /// every other image on the home screen and looks like it belongs there; Trakt is the backstop for
+    /// shows those providers cannot illustrate. Resolved lazily behind the redirect endpoint rather
+    /// than while building the list, so a row of twelve cards never turns into twelve metadata lookups
+    /// before anything is drawn.
+    /// </remarks>
+    public async Task<string?> GetExternalImageUrlAsync(int traktId)
     {
         if (_posterCache.TryGetValue(traktId, out var cached) && !cached.IsExpired)
         {
             return cached.Url;
         }
 
+        _imageLookups.TryGetValue(traktId, out var lookup);
+
+        var url = await GetProviderImageUrlAsync(lookup).ConfigureAwait(false)
+            ?? await GetTraktImageUrlAsync(traktId).ConfigureAwait(false);
+
+        if (url == null)
+        {
+            // Worth saying out loud: a card with no artwork is the most visible failure the widget
+            // has. Logged at most once every PosterMissCacheDuration per show.
+            _logger.LogInformation(
+                "No artwork available for {Title} (Trakt {TraktId}) from Jellyfin's metadata providers "
+                + "or Trakt; the widget will show a plain tile",
+                lookup?.Title ?? "unknown show",
+                traktId);
+        }
+
+        _posterCache[traktId] = new CachedPoster
+        {
+            Url = url,
+            ExpiresAt = DateTime.UtcNow + (url == null ? PosterMissCacheDuration : PosterCacheDuration)
+        };
+
+        return url;
+    }
+
+    /// <summary>
+    /// Asks Jellyfin's configured metadata providers for the show's artwork.
+    /// </summary>
+    /// <remarks>
+    /// For a show in the library the real item is passed, so the providers see the user's metadata
+    /// language and library options. For one that is not, a detached <see cref="Series"/> carrying the
+    /// show's provider IDs stands in - the image providers key off those IDs, not off library
+    /// membership. If that is ever rejected, the identify-style search is asked instead, which only
+    /// needs a name and an ID.
+    /// </remarks>
+    private async Task<string?> GetProviderImageUrlAsync(ShowImageLookup? lookup)
+    {
+        if (lookup == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var item = lookup.LibraryItemId.HasValue
+                ? _localLibraryService.FindItemById(lookup.LibraryItemId.Value)
+                : null;
+
+            item ??= BuildProbeSeries(lookup);
+
+            var images = await _providerManager
+                .GetAvailableRemoteImages(item, new RemoteImageQuery(string.Empty), CancellationToken.None)
+                .ConfigureAwait(false);
+
+            var url = PickWidestImage(images);
+            if (url != null)
+            {
+                return url;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Remote image lookup failed for {Title}", lookup.Title);
+        }
+
+        try
+        {
+            var results = await _providerManager.GetRemoteSearchResults<Series, SeriesInfo>(
+                new RemoteSearchQuery<SeriesInfo>
+                {
+                    SearchInfo = new SeriesInfo
+                    {
+                        Name = lookup.Title,
+                        Year = lookup.Year,
+                        ProviderIds = BuildProviderIds(lookup)
+                    }
+                },
+                CancellationToken.None).ConfigureAwait(false);
+
+            return results
+                .Select(result => result.ImageUrl)
+                .FirstOrDefault(imageUrl => !string.IsNullOrEmpty(imageUrl));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Metadata search failed for {Title}", lookup.Title);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Falls back to Trakt's artwork.
+    /// </summary>
+    private async Task<string?> GetTraktImageUrlAsync(int traktId)
+    {
         // Any linked account can read a show's artwork - it is not user specific - so the first user
         // with a usable token answers for everyone, which also lets the widget's <img> tags stay
         // anonymous requests.
@@ -191,34 +306,74 @@ public class NextSeasonsWidgetService
             return null;
         }
 
-        string? url = null;
         try
         {
-            url = await _traktApi.GetShowImageUrl(traktUser, traktId);
+            return await _traktApi.GetShowImageUrl(traktUser, traktId).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             // Missing artwork is cosmetic; the widget falls back to a plain tile.
-            _logger.LogDebug(ex, "Could not load artwork for Trakt show {TraktId}", traktId);
+            _logger.LogDebug(ex, "Could not load Trakt artwork for show {TraktId}", traktId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Picks the best wide image available, in the same order the library images are preferred.
+    /// </summary>
+    private static string? PickWidestImage(IEnumerable<RemoteImageInfo> images)
+    {
+        var candidates = images.Where(image => !string.IsNullOrEmpty(image.Url)).ToList();
+
+        foreach (var imageType in PreferredImageTypes)
+        {
+            var best = candidates
+                .Where(image => image.Type == imageType)
+                .OrderByDescending(image => image.CommunityRating ?? 0)
+                .ThenByDescending(image => image.Width ?? 0)
+                .FirstOrDefault();
+
+            if (best != null)
+            {
+                return best.Url;
+            }
         }
 
-        if (url == null)
+        return null;
+    }
+
+    private static Dictionary<string, string> BuildProviderIds(ShowImageLookup lookup)
+    {
+        var providerIds = new Dictionary<string, string>();
+
+        if (lookup.TvdbId.HasValue)
         {
-            // Worth saying out loud: a card with no artwork is the most visible failure the widget
-            // has, and the cause is usually a show that is neither in the library nor illustrated on
-            // Trakt. Logged at most once every PosterMissCacheDuration per show.
-            _logger.LogInformation(
-                "No artwork available for Trakt show {TraktId}; the widget will show a plain tile",
-                traktId);
+            providerIds[MetadataProvider.Tvdb.ToString()] = lookup.TvdbId.Value.ToString(CultureInfo.InvariantCulture);
         }
 
-        _posterCache[traktId] = new CachedPoster
+        if (lookup.TmdbId.HasValue)
         {
-            Url = url,
-            ExpiresAt = DateTime.UtcNow + (url == null ? PosterMissCacheDuration : PosterCacheDuration)
-        };
+            providerIds[MetadataProvider.Tmdb.ToString()] = lookup.TmdbId.Value.ToString(CultureInfo.InvariantCulture);
+        }
 
-        return url;
+        if (!string.IsNullOrEmpty(lookup.ImdbId))
+        {
+            providerIds[MetadataProvider.Imdb.ToString()] = lookup.ImdbId;
+        }
+
+        return providerIds;
+    }
+
+    private static Series BuildProbeSeries(ShowImageLookup lookup)
+    {
+        var series = new Series { Name = lookup.Title, ProductionYear = lookup.Year };
+
+        foreach (var providerId in BuildProviderIds(lookup))
+        {
+            series.SetProviderId(providerId.Key, providerId.Value);
+        }
+
+        return series;
     }
 
     private static string GetRequestKey(int traktId, int seasonNumber)
@@ -237,27 +392,37 @@ public class NextSeasonsWidgetService
     /// </remarks>
     private (string? ImagePath, string? FallbackImagePath) GetImagePaths(ContentItem item)
     {
-        var traktPath = item.TraktId == 0
+        var externalPath = item.TraktId == 0
             ? null
             : string.Create(CultureInfo.InvariantCulture, $"JellyNext/Widget/Poster/{item.TraktId}");
+
+        string? libraryPath = null;
+        var libraryImageIsWide = false;
+        Guid? libraryItemId = null;
 
         try
         {
             var series = _localLibraryService.FindSeriesByAnyProviderId(item.TvdbId, item.TmdbId, item.ImdbId);
             if (series != null)
             {
+                libraryItemId = series.Id;
+
                 foreach (var imageType in PreferredImageTypes)
                 {
                     if (series.HasImage(imageType, 0))
                     {
-                        var libraryPath = string.Create(
+                        libraryPath = string.Create(
                             CultureInfo.InvariantCulture,
                             $"Items/{series.Id:N}/Images/{imageType}?fillWidth=560&fillHeight=315&quality=90");
-                        return (libraryPath, traktPath);
+                        libraryImageIsWide = imageType != ImageType.Primary;
+                        break;
                     }
                 }
 
-                _logger.LogDebug("{Title} is in the library but has no artwork yet", item.Title);
+                if (libraryPath == null)
+                {
+                    _logger.LogDebug("{Title} is in the library but has no artwork yet", item.Title);
+                }
             }
         }
         catch (Exception ex)
@@ -265,7 +430,43 @@ public class NextSeasonsWidgetService
             _logger.LogDebug(ex, "Could not resolve library artwork for {Title}", item.Title);
         }
 
-        return (traktPath, null);
+        if (item.TraktId != 0)
+        {
+            _imageLookups[item.TraktId] = new ShowImageLookup
+            {
+                Title = item.Title,
+                Year = item.Year,
+                TvdbId = item.TvdbId,
+                TmdbId = item.TmdbId,
+                ImdbId = item.ImdbId,
+                LibraryItemId = libraryItemId
+            };
+        }
+
+        // A poster is the library's least useful image for a 16:9 card, so a wide one from the
+        // metadata providers is tried ahead of it and the poster becomes the backstop. Wide library
+        // artwork always wins - it is the picture the rest of the home screen is already showing.
+        return libraryImageIsWide
+            ? (libraryPath, externalPath)
+            : (externalPath ?? libraryPath, externalPath == null ? null : libraryPath);
+    }
+
+    /// <summary>
+    /// What is needed to ask a metadata provider for a show's artwork.
+    /// </summary>
+    private sealed class ShowImageLookup
+    {
+        public string Title { get; init; } = string.Empty;
+
+        public int? Year { get; init; }
+
+        public int? TvdbId { get; init; }
+
+        public int? TmdbId { get; init; }
+
+        public string? ImdbId { get; init; }
+
+        public Guid? LibraryItemId { get; init; }
     }
 
     private sealed class CachedPoster
