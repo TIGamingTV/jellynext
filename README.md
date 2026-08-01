@@ -114,7 +114,7 @@ Features:
 ### 📧 New Season Email Notifications
 - **Told When a Season Drops**: Emails a user when a new season of a show they watch is released
 - **One Digest, One Announcement**: All new seasons found in a sync go out in a single email, and each season is only ever announced once
-- **Genuinely New Only**: A season qualifies if it premiered inside the notification window or is still airing — finishing an old show does not produce an email
+- **Genuinely New Only**: A season qualifies if its latest release falls inside the notification window — finishing an old show does not produce an email
 - **Per-User Opt-In**: Each user enables notifications and sets their own address (Jellyfin accounts have no email address of their own)
 
 ### 🖥️ New Seasons Widget (Web Interface)
@@ -227,8 +227,8 @@ After authorization, configure what to sync for each user:
 - ☐ **Sync Watchlist Shows**: Automatically add watchlisted shows to your download system
 
 **Next Seasons Filters:**
-- ☐ **Only Newly Released Seasons**: Only suggest a next season if it premiered recently or is still airing. Off by default, which suggests the next unwatched season of every show you haven't finished, including shows that ended years ago
-- **New Release Window (days)**: How long after its premiere a season still counts as new (1-3650, default: 90). A season part-way through its run always counts as new
+- ☐ **Only Newly Released Seasons**: Only suggest a next season if it was released recently. Off by default, which suggests the next unwatched season of every show you haven't finished, including shows that ended years ago
+- **New Release Window (days)**: How long after its latest release a season still counts as new (1-3650, default: 90). Measured from the premiere, or from the most recent episode for a season that is still airing — so a long or split-cour season stays in scope while it is running, and drops out once it stops
 
 **New Season Notifications:**
 - ☐ **Email Me About New Seasons**: Email this user when a new season of a show they watch is released. Requires **Sync Next Seasons**, and SMTP settings on the Notifications tab
@@ -435,7 +435,7 @@ Click **Save** when done.
 Go to **Dashboard → Plugins → JellyNext → Notifications tab**.
 
 1. Enable **New Season Email Notifications** (master switch — each user still opts in individually)
-2. **Announce Seasons Released Within (days)**: how recently a season must have premiered to be announced (1-365, default: 30). A season part-way through airing is always announced
+2. **Announce Seasons Released Within (days)**: how recently a season must have been released to be announced (1-365, default: 30). Measured from the premiere, or from the most recent episode for a season that is still airing
 3. Fill in the SMTP server settings:
    - **SMTP Server** / **SMTP Port**: use port 587 (STARTTLS) or 25. **Port 465 (implicit SSL) is not supported** — providers that offer 465 practically always offer 587 as well
    - **Use STARTTLS**: leave enabled unless the server is a local relay without encryption
@@ -508,7 +508,7 @@ When enabled, JellyNext automatically monitors your Trakt watchlist and adds ite
 
 When enabled, JellyNext emails a user as new seasons of the shows they watch are released:
 
-- **What triggers one**: a season that has just entered the user's Next Seasons library — the next season they haven't watched, already aired, and not already in Jellyfin — *and* is a new release: premiered inside the notification window, or part-way through airing.
+- **What triggers one**: a season that has just entered the user's Next Seasons library — the next season they haven't watched, already aired, and not already in Jellyfin — *and* is a new release: its premiere, or its most recent episode if it is still airing, falls inside the notification window.
 - **What doesn't**: catching up on an old show. Finishing season 2 of a show that ended in 2015 makes season 3 a "next season", but nothing about it is new, so no email is sent.
 - **One email per sync**: everything found in a run goes out as a single digest listing each show, season and premiere date.
 - **Announced once**: sent announcements are recorded in the plugin configuration, so a restart doesn't repeat them, and a season that airs over several months is not re-announced part-way through. Records are dropped after 400 days.
@@ -1022,7 +1022,10 @@ A:
 - **Next Seasons**: Next unwatched season of shows you're already watching
 
 **Q: Next Seasons lists every show I haven't finished. Can I see only new releases?**
-A: Yes — enable "Only Newly Released Seasons" in the per-user settings. It keeps a show out of the library unless the season you're up next on premiered within the release window (default 90 days) or is still airing, so the library becomes "what just came out for shows I watch" rather than a backlog list. Note that if you're several seasons behind on a show, its old next season stays hidden.
+A: Yes — enable "Only Newly Released Seasons" in the per-user settings. It keeps a show out of the library unless the season you're up next on was released within the release window (default 90 days), so the library becomes "what just came out for shows I watch" rather than a backlog list. Note that if you're several seasons behind on a show, its old next season stays hidden.
+
+**Q: A season I'm not interested in stays in Next Seasons however short I make the release window.**
+A: Fixed in v1.9.7.0. A season that was part-way through airing used to count as new no matter how old it was, so a weekly show stayed in the library for its whole run and no window could age it out. The window is now measured from the season's most recent episode instead, so it applies to airing seasons too. Changing the window also queues a content sync straight away, rather than leaving the old list in place until the next six-hourly run.
 
 **Q: Why only 10 seasons for show recommendations?**
 A: Performance. Jellyfin scans can be slow with thousands of stub files. Enable "Limit Shows to Season 1" for even better performance.

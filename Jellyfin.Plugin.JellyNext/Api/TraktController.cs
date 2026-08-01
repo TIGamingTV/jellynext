@@ -3,9 +3,11 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyNext.Helpers;
+using Jellyfin.Plugin.JellyNext.ScheduledTasks;
 using Jellyfin.Plugin.JellyNext.Services;
 using Jellyfin.Plugin.JellyNext.VirtualLibrary;
 using MediaBrowser.Common.Api;
+using MediaBrowser.Model.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -25,6 +27,7 @@ public class TraktController : ControllerBase
     private readonly TraktApi _traktApi;
     private readonly VirtualLibraryManager _virtualLibraryManager;
     private readonly TraktPluginBridge _traktPluginBridge;
+    private readonly ITaskManager _taskManager;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TraktController"/> class.
@@ -33,16 +36,19 @@ public class TraktController : ControllerBase
     /// <param name="traktApi">The Trakt API service.</param>
     /// <param name="virtualLibraryManager">The virtual library manager.</param>
     /// <param name="traktPluginBridge">Bridge to the official Trakt plugin's stored tokens.</param>
+    /// <param name="taskManager">The scheduled task manager.</param>
     public TraktController(
         ILogger<TraktController> logger,
         TraktApi traktApi,
         VirtualLibraryManager virtualLibraryManager,
-        TraktPluginBridge traktPluginBridge)
+        TraktPluginBridge traktPluginBridge,
+        ITaskManager taskManager)
     {
         _logger = logger;
         _traktApi = traktApi;
         _virtualLibraryManager = virtualLibraryManager;
         _traktPluginBridge = traktPluginBridge;
+        _taskManager = taskManager;
     }
 
     /// <summary>
@@ -283,11 +289,20 @@ public class TraktController : ControllerBase
             return NotFound(new { error = "Trakt user configuration not found" });
         }
 
+        var recentDays = Math.Clamp(settings.NextSeasonsRecentDays, 1, 3650);
+
+        // The Next Seasons library and widget are both built from cached content, so a narrower window
+        // only takes effect on the next sync - up to six hours of a season the user just filtered out
+        // still sitting there, which reads as the setting having done nothing.
+        var nextSeasonsFilterChanged = traktUser.SyncNextSeasons != settings.SyncNextSeasons
+            || traktUser.NextSeasonsRecentOnly != settings.NextSeasonsRecentOnly
+            || traktUser.NextSeasonsRecentDays != recentDays;
+
         traktUser.SyncMovieRecommendations = settings.SyncMovieRecommendations;
         traktUser.SyncShowRecommendations = settings.SyncShowRecommendations;
         traktUser.SyncNextSeasons = settings.SyncNextSeasons;
         traktUser.NextSeasonsRecentOnly = settings.NextSeasonsRecentOnly;
-        traktUser.NextSeasonsRecentDays = Math.Clamp(settings.NextSeasonsRecentDays, 1, 3650);
+        traktUser.NextSeasonsRecentDays = recentDays;
         traktUser.SyncWatchlistMovies = settings.SyncWatchlistMovies;
         traktUser.SyncWatchlistShows = settings.SyncWatchlistShows;
         traktUser.IgnoreCollected = settings.IgnoreCollected;
@@ -301,6 +316,14 @@ public class TraktController : ControllerBase
         Plugin.Instance?.SaveConfiguration();
 
         _logger.LogInformation("Updated Trakt settings for user {UserGuid}", userGuid);
+
+        if (nextSeasonsFilterChanged)
+        {
+            _logger.LogInformation(
+                "Next Seasons filter changed for user {UserGuid}, queueing a content sync",
+                userGuid);
+            _taskManager.QueueScheduledTask<ContentSyncScheduledTask>();
+        }
 
         return Ok(new { success = true });
     }

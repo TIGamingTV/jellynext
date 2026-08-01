@@ -19,9 +19,9 @@ namespace Jellyfin.Plugin.JellyNext.Services;
 /// <remarks>
 /// Runs off the Next Seasons content that has just been synced, so a season is announced under the
 /// same conditions that put it in the user's library: it is the next season they have not watched,
-/// it has aired, and it is not already in Jellyfin. Only seasons that are genuinely new - premiered
-/// inside the notification window, or still airing - are announced, because progressing through an
-/// old show also produces a "next season" and that is not something dropping.
+/// it has aired, and it is not already in Jellyfin. Only seasons that are genuinely new - whose most
+/// recent release falls inside the notification window - are announced, because progressing through
+/// an old show also produces a "next season" and that is not something dropping.
 /// </remarks>
 public class NewSeasonNotificationService
 {
@@ -147,6 +147,7 @@ public class NewSeasonNotificationService
             .Where(item => SeasonReleaseHelper.IsRecentlyReleased(
                 item.SeasonFirstAired,
                 item.SeasonIsAiring,
+                item.SeasonAiredEpisodes ?? 0,
                 windowDays))
             .Where(item => !alreadyNotified.Contains((item.TvdbId!.Value, item.SeasonNumber!.Value)))
             .OrderByDescending(item => item.SeasonFirstAired ?? DateTime.MinValue)
