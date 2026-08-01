@@ -91,14 +91,19 @@ function formatWidgetDiagnostics(result) {
 
     result.items.forEach(function (item) {
         lines.push('');
-        lines.push(item.Title + '  (trakt ' + item.TraktId + ', tvdb ' + (item.TvdbId || '-') +
-            ', tmdb ' + (item.TmdbId || '-') + ', imdb ' + (item.ImdbId || '-') + ')');
-        lines.push('  in library:   ' + (item.LibraryItemId
+        lines.push(item.Title + ' season ' + item.SeasonNumber + '  (trakt ' + item.TraktId +
+            ', tvdb ' + (item.TvdbId || '-') + ', tmdb ' + (item.TmdbId || '-') +
+            ', imdb ' + (item.ImdbId || '-') + ')');
+        lines.push('  show in library:   ' + (item.LibraryItemId
             ? item.LibraryItemId + ' holding [' + (item.LibraryImages || []).join(', ') + ']'
             : 'not matched'));
-        lines.push('  card loads:   ' + (item.ImagePath || 'nothing'));
-        lines.push('  then tries:   ' + (item.FallbackImagePath || 'nothing'));
-        lines.push('  providers/Trakt resolved: ' + (item.ResolvedExternalUrl || 'nothing'));
+        lines.push('  season in library: ' + (item.SeasonItemId
+            ? item.SeasonItemId + ' holding [' + (item.SeasonImages || []).join(', ') + ']'
+            : 'not known to Jellyfin'));
+        lines.push('  card loads:        ' + (item.ImagePath || 'nothing'));
+        lines.push('  then tries:        ' + (item.FallbackImagePath || 'nothing'));
+        lines.push('  artwork taken from: ' + (item.ResolvedSource || 'nowhere - the card will be a name tile'));
+        lines.push('  which is:          ' + (item.ResolvedUrl || 'nothing'));
         if (item.Error) {
             lines.push('  error: ' + item.Error);
         }

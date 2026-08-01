@@ -153,6 +153,34 @@ public class LocalLibraryService
     }
 
     /// <summary>
+    /// Finds a season of a series in the library, whether or not it is on disk.
+    /// </summary>
+    /// <param name="series">The series.</param>
+    /// <param name="seasonNumber">The season number.</param>
+    /// <returns>The season if Jellyfin knows about it, null otherwise.</returns>
+    /// <remarks>
+    /// Deliberately the opposite of <see cref="GetLocalSeasons"/>: virtual seasons are included
+    /// because this answers "does Jellyfin have artwork and metadata for this season", not "is it on
+    /// disk". With "display missing episodes" enabled Jellyfin materialises a season entity - complete
+    /// with the provider's season poster - for a season the user does not own yet, which is exactly the
+    /// picture the New Seasons widget wants and is free to read.
+    /// </remarks>
+    public Season? FindSeason(Series series, int seasonNumber)
+    {
+        var seasonItems = _libraryManager.GetItemList(new InternalItemsQuery
+        {
+            ParentId = series.Id,
+            IncludeItemTypes = new[] { BaseItemKind.Season },
+            Recursive = false
+        });
+
+        return seasonItems
+            .OfType<Season>()
+            .FirstOrDefault(season => season.IndexNumber == seasonNumber
+                && (!season.Path?.Contains("jellynext-virtual", StringComparison.OrdinalIgnoreCase) ?? true));
+    }
+
+    /// <summary>
     /// Checks if a specific season exists locally for a series.
     /// </summary>
     /// <param name="tvdbId">The TVDB ID of the series, if known.</param>

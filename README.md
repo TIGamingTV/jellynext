@@ -119,8 +119,8 @@ Features:
 
 ### 🖥️ New Seasons Widget (Web Interface)
 - **Request Without Playing Anything**: An opt-in row on the Jellyfin home screen listing the shows you have a new season of, each with a **Request** button
-- **Looks Like the Rest of the Home Screen**: Drawn with Jellyfin's own cards, so it matches Continue Watching and Next Up in size, shape and alignment
-- **Artwork, Name, Season, Year, Episodes**: Images come from your own library where the show is already in it, and from Trakt otherwise
+- **Looks Like the Rest of the Home Screen**: Drawn with Jellyfin's own cards, so it picks up your theme's fonts, colours and hover behaviour
+- **Season Artwork, Name, Season, Year, Episodes**: The season's own poster where Jellyfin or your metadata providers have one, the show's picture otherwise, and Trakt as a last resort
 - **Same Content as the Library**: Shows exactly what your Next Seasons library holds, including your "New Release Window" filter — no extra Trakt requests
 - **Any Download Integration**: Requests go through whichever backend is configured (Radarr/Sonarr, Jellyseerr or a webhook), attributed to the user who pressed the button
 
@@ -527,19 +527,20 @@ When enabled, the Jellyfin home screen gains a row of the shows you have an unwa
   configured number of shows. If you turned on the per-user "Recently Released Seasons Only" filter,
   the widget respects it too.
 - **What a card shows**: the artwork, a season badge, the show's name, and the season, year and
-  episode count (a season that is still airing reads "4 of 12 episodes"). Cards are built from
-  Jellyfin's own card markup, so the row is the same size, shape and alignment as the home screen's
-  other rows in whatever theme and window size you use.
+  episode count (a season that is still airing reads "4 of 12 episodes"). Cards are portrait, since
+  what is being offered is a season, and are built from Jellyfin's own card markup, so they pick up
+  your theme's fonts, colours, corners and hover behaviour.
 - **Pressing Request**: sends that season to whichever download integration is configured, exactly as
   playing the stub in the virtual library does, attributed to the user who pressed it. The button then
   reads "Requested" and stays that way until the season shows up in your library and the item
   disappears from the list.
-- **Artwork**: the show's backdrop or thumbnail from your Jellyfin library when the show is already
-  in it — which is usually the case, since you watched an earlier season, and it is the same picture
-  the rest of your home screen shows. Otherwise Jellyfin's own metadata providers (TMDB, TheTVDB,
-  whatever your server uses) are asked for the show's artwork, with Trakt as a last resort. Shows are
-  matched to your library on TVDB, TMDB or IMDB ID. A poster is shown whole rather than cropped into
-  the wide card, and a show with no artwork anywhere gets a plain tile with its name on it.
+- **Artwork**: the season's own picture wherever there is one. In order: the season as your library
+  already holds it (with "display missing episodes" on, Jellyfin has the season's poster before you
+  own a single episode of it), then the season from your metadata providers (TMDB, TheTVDB, whatever
+  your server uses), then the show from your library — usually present, since you watched an earlier
+  season — then the show from those same providers, and Trakt as a last resort. Shows are matched to
+  your library on TVDB, TMDB or IMDB ID. A wide image is shown whole rather than cropped into the
+  portrait card, and a show with no artwork anywhere gets a plain tile with its name on it.
 - **Cost**: none in Trakt requests. The widget reads the content the sync already cached.
 
 **To enable**: **Dashboard → Plugins → JellyNext → Widget tab**, then reload the web interface with
@@ -709,7 +710,7 @@ Jellyfin.Plugin.JellyNext/
 │   ├── RadarrController.cs       # Radarr connection testing, profiles (native mode)
 │   ├── SonarrController.cs       # Sonarr connection testing, profiles (native mode)
 │   ├── NotificationsController.cs  # Test email endpoint
-│   ├── WidgetController.cs       # New Seasons widget contents, requests, posters
+│   ├── WidgetController.cs       # New Seasons widget contents, requests, artwork
 │   ├── ClientScriptController.cs # Serves the widget script to the web client
 │   └── JellyNextLibraryController.cs  # Query cached content
 ├── Configuration/                # Plugin settings
@@ -743,7 +744,7 @@ Jellyfin.Plugin.JellyNext/
 │   ├── LocalLibraryService.cs    # Jellyfin library queries
 │   ├── EmailService.cs           # SMTP sender
 │   ├── NewSeasonNotificationService.cs  # New season email digests
-│   ├── NextSeasonsWidgetService.cs  # Backs the home screen widget (contents, requests, posters)
+│   ├── NextSeasonsWidgetService.cs  # Backs the home screen widget (contents, requests, artwork)
 │   ├── WebScriptInjector.cs      # Adds/removes the widget script tag in the web client
 │   ├── PlaybackInterceptor.cs    # Detects virtual playback, routes to download provider
 │   ├── JellyseerrService.cs      # Jellyseerr API client (user import, requests)
@@ -889,11 +890,11 @@ Contributions are welcome! Please:
 
 **"The widget shows plain tiles with the show's name instead of artwork"**
 - Use **Dashboard → Plugins → JellyNext → Widget → Check Artwork**: it reports per card whether the
-  show was matched in your library, which images that item holds, and what the metadata providers and
-  Trakt resolved to, which says exactly which step came back empty
-- Images come from your Jellyfin library first (backdrop, then thumbnail, then poster), then from
-  your server's metadata providers, then from Trakt. A tile means all three came back empty — the
-  log says `No artwork available for ...` once per show when that happens
+  show and the season were matched in your library, which images those items hold, and which step of
+  the chain produced the picture, which says exactly where it came back empty
+- Images are looked for in five places — the season in your library, the season from your metadata
+  providers, the show in your library, the show from those providers, then Trakt. A tile means all
+  five came back empty; the log says `No artwork available for ...` once per season when that happens
 - A show in your library with no artwork at all gets some after Jellyfin's next metadata refresh
 - If every card is a tile, check that your metadata providers are working for TV in
   **Dashboard → Libraries**, since the widget uses the same ones
