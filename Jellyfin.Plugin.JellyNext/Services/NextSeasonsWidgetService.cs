@@ -80,6 +80,7 @@ public class NextSeasonsWidgetService
     private readonly TraktApi _traktApi;
     private readonly IProviderManager _providerManager;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly VirtualLibrary.VirtualLibraryManager _virtualLibraryManager;
 
     // Not persisted, like the watchlist's request tracking: the durable answer to "do I have this
     // season" is the library, which the next content sync re-checks. This only keeps the button from
@@ -102,6 +103,7 @@ public class NextSeasonsWidgetService
     /// <param name="traktApi">The Trakt API service.</param>
     /// <param name="providerManager">The metadata provider manager.</param>
     /// <param name="httpClientFactory">The HTTP client factory.</param>
+    /// <param name="virtualLibraryManager">The virtual library manager.</param>
     public NextSeasonsWidgetService(
         ILogger<NextSeasonsWidgetService> logger,
         ContentCacheService cacheService,
@@ -109,7 +111,8 @@ public class NextSeasonsWidgetService
         DownloadProviderFactory downloadProviderFactory,
         TraktApi traktApi,
         IProviderManager providerManager,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory,
+        VirtualLibrary.VirtualLibraryManager virtualLibraryManager)
     {
         _logger = logger;
         _cacheService = cacheService;
@@ -118,6 +121,7 @@ public class NextSeasonsWidgetService
         _traktApi = traktApi;
         _providerManager = providerManager;
         _httpClientFactory = httpClientFactory;
+        _virtualLibraryManager = virtualLibraryManager;
     }
 
     /// <summary>
@@ -127,14 +131,9 @@ public class NextSeasonsWidgetService
     /// <returns>The widget items, limited to the configured item count.</returns>
     public IReadOnlyList<NextSeasonWidgetItem> GetItems(Guid userId)
     {
-        var limit = Math.Clamp(Plugin.Instance?.Configuration.NextSeasonsWidgetLimit ?? 12, 1, 50);
         var requestedForUser = _requested.GetOrAdd(userId, _ => new ConcurrentDictionary<string, DateTime>());
 
-        return _cacheService.GetCachedContent(userId, ProviderName)
-            .Where(item => item.Type == ContentType.Show && item.SeasonNumber.HasValue)
-            .OrderByDescending(item => item.SeasonFirstAired ?? DateTime.MinValue)
-            .ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)
-            .Take(limit)
+        return GetContentItems(userId)
             .Select(item =>
             {
                 var images = GetImagePaths(item);
@@ -151,9 +150,57 @@ public class NextSeasonsWidgetService
                     IsAiring = item.SeasonIsAiring,
                     ImagePath = images.ImagePath,
                     FallbackImagePath = images.FallbackImagePath,
-                    Requested = requestedForUser.ContainsKey(GetRequestKey(item.TraktId, item.SeasonNumber!.Value))
+                    Requested = requestedForUser.ContainsKey(GetRequestKey(item.TraktId, item.SeasonNumber!.Value)),
+                    LibraryItemId = FindVirtualLibraryItem(userId, item)?.Id.ToString("N", CultureInfo.InvariantCulture)
                 };
             })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Finds the virtual library item Jellyfin created for a show's Next Seasons stub.
+    /// </summary>
+    /// <param name="userId">The user whose virtual library to look in.</param>
+    /// <param name="item">The cached content item.</param>
+    /// <returns>The show folder's library item, or null when it has not been scanned in.</returns>
+    /// <remarks>
+    /// The show folder rather than the stub file inside it: the folder is the item carrying the show's
+    /// name and poster, which is what a card should be. Absent is the normal state on a server that
+    /// never set the virtual library up, so this stays quiet about it - the widget's own cards do not
+    /// need the item, only the Modular Home section and the card-matching in the client script do.
+    /// </remarks>
+    public BaseItem? FindVirtualLibraryItem(Guid userId, ContentItem item)
+    {
+        try
+        {
+            var folder = _virtualLibraryManager.GetNextSeasonShowFolderPath(userId, item);
+            return folder == null ? null : _localLibraryService.FindByPath(folder, isFolder: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not resolve the virtual library item for {Title}", item.Title);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Gets the cached Next Seasons content for a user, in the order the widget lists it.
+    /// </summary>
+    /// <param name="userId">The Jellyfin user ID.</param>
+    /// <returns>The content items, limited to the configured item count.</returns>
+    /// <remarks>
+    /// Exposed so the Modular Home section can answer with the same shows, in the same order, under
+    /// the same per-user filters as the widget, without a second definition of any of it.
+    /// </remarks>
+    public IReadOnlyList<ContentItem> GetContentItems(Guid userId)
+    {
+        var limit = Math.Clamp(Plugin.Instance?.Configuration.NextSeasonsWidgetLimit ?? 12, 1, 50);
+
+        return _cacheService.GetCachedContent(userId, ProviderName)
+            .Where(item => item.Type == ContentType.Show && item.SeasonNumber.HasValue)
+            .OrderByDescending(item => item.SeasonFirstAired ?? DateTime.MinValue)
+            .ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)
+            .Take(limit)
             .ToList();
     }
 

@@ -57,13 +57,25 @@ public class WidgetController : ControllerBase
     {
         var config = Plugin.Instance?.Configuration;
         var enabled = config?.NextSeasonsWidgetEnabled == true;
-        var userId = enabled ? await GetUserId() : Guid.Empty;
+        var decorate = config?.ModularHomeIntegrationEnabled == true
+            && config?.ModularHomeRequestButtonEnabled == true;
+
+        // The contents are needed for the standalone row and, when Modular Home renders the row
+        // instead, to match its cards to the season each one is offering - its cards carry a Jellyfin
+        // item id and nothing else. Either feature alone is reason enough to answer.
+        var userId = enabled || decorate ? await GetUserId() : Guid.Empty;
 
         return Ok(new
         {
             enabled,
             title = config?.NextSeasonsWidgetTitle ?? "New Seasons",
             position = (config?.NextSeasonsWidgetPosition ?? WidgetPosition.Top).ToString(),
+            modularHome = new
+            {
+                enabled = config?.ModularHomeIntegrationEnabled == true,
+                decorate,
+                sectionId = ModularHomeBridge.SectionId
+            },
             items = userId == Guid.Empty
                 ? Array.Empty<NextSeasonWidgetItem>()
                 : _widgetService.GetItems(userId)
@@ -82,7 +94,7 @@ public class WidgetController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<object>> RequestSeason([FromBody] WidgetRequest request)
     {
-        if (Plugin.Instance?.Configuration.NextSeasonsWidgetEnabled != true)
+        if (!IsRequestingEnabled())
         {
             return BadRequest(new { success = false, message = "The New Seasons widget is disabled." });
         }
@@ -215,6 +227,50 @@ public class WidgetController : ControllerBase
             userId,
             items = await _widgetService.GetDiagnosticsAsync(userId)
         });
+    }
+
+    /// <summary>
+    /// Reports whether the Modular Home integration is configured and whether the plugin is present.
+    /// </summary>
+    /// <param name="bridge">The Modular Home bridge.</param>
+    /// <returns>The integration's state.</returns>
+    /// <remarks>
+    /// Admin only. Exists because "the row does not appear" has three quite different causes - the
+    /// plugin is not installed, the section is not registered, or the user has not enabled it in
+    /// Modular Home's own settings - and only the first two are visible from here.
+    /// </remarks>
+    [HttpGet("ModularHome/Status")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<object> GetModularHomeStatus([FromServices] ModularHomeBridge bridge)
+    {
+        var config = Plugin.Instance?.Configuration;
+
+        return Ok(new
+        {
+            integrationEnabled = config?.ModularHomeIntegrationEnabled == true,
+            requestButtonEnabled = config?.ModularHomeRequestButtonEnabled == true,
+            pluginDetected = bridge.IsAvailable,
+            pluginVersion = bridge.PluginVersion,
+            sectionId = ModularHomeBridge.SectionId,
+            message = bridge.DescribeStatus()
+        });
+    }
+
+    /// <summary>
+    /// Determines whether season requests from the client are accepted.
+    /// </summary>
+    /// <returns>True when either delivery of the row is switched on.</returns>
+    private static bool IsRequestingEnabled()
+    {
+        var config = Plugin.Instance?.Configuration;
+        if (config == null)
+        {
+            return false;
+        }
+
+        return config.NextSeasonsWidgetEnabled
+            || (config.ModularHomeIntegrationEnabled && config.ModularHomeRequestButtonEnabled);
     }
 
     private async Task<Guid> GetUserId()

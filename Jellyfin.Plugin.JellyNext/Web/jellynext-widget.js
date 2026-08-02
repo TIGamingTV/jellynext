@@ -9,6 +9,13 @@
  * The web client rebuilds the home screen on every navigation and offers no extension point, so the
  * section is (re)inserted by watching the DOM.
  *
+ * When the Modular Home plugin is driving the home screen and JellyNext's section is registered with
+ * it, this script stops drawing a row of its own - Modular Home renders one from the same content,
+ * placed wherever the user put it - and instead decorates the cards it rendered with a Request
+ * button. Modular Home renders third-party sections with Jellyfin's stock card builder, which has no
+ * hook for a per-card button, so that button can only be added from here. It is the same technique
+ * Modular Home itself uses for its own request button.
+ *
  * Cards are built from Jellyfin's own card markup (card / cardBox / cardScalable / cardPadder /
  * cardImageContainer / cardText) so they inherit the client's theme - fonts, colours, corners,
  * hover. Their geometry, though, is set here rather than inherited: the width of a home screen card
@@ -81,7 +88,11 @@
         '    color: #fff; background: var(--accent, #00a4dc); font-family: inherit; }',
         '.jellynextButton:hover:not(:disabled) { filter: brightness(1.12); }',
         '.jellynextButton:disabled { background: rgba(127,127,127,.3); color: inherit; opacity: .85;',
-        '    cursor: default; }'
+        '    cursor: default; }',
+
+        // On a card Modular Home drew, the button is a guest: it has to sit inside a layout this
+        // script did not write, so it only claims the width it was given and a little space above.
+        '.jellynextDecoratedButton { margin: .35em .3em .1em; width: auto; }'
     ].join('\n');
 
     function addStyles() {
@@ -268,22 +279,31 @@
         meta.textContent = metaText(item);
         box.appendChild(meta);
 
+        box.appendChild(buildRequestButton(item));
+        card.appendChild(box);
+        return card;
+    }
+
+    function buildRequestButton(item) {
         var button = document.createElement('button');
         button.className = 'jellynextButton';
         button.type = 'button';
+
         if (item.requested) {
             button.textContent = 'Requested';
             button.disabled = true;
         } else {
             button.textContent = 'Request';
-            button.addEventListener('click', function () {
+            button.addEventListener('click', function (event) {
+                // On a Modular Home card the button sits inside Jellyfin's own click surface, which
+                // would otherwise navigate to the item as well.
+                event.preventDefault();
+                event.stopPropagation();
                 requestSeason(item, button);
             });
         }
 
-        box.appendChild(button);
-        card.appendChild(box);
-        return card;
+        return button;
     }
 
     function requestSeason(item, button) {
@@ -379,11 +399,7 @@
         }
     }
 
-    function ensureSections() {
-        if (!isSignedIn()) {
-            return;
-        }
-
+    function ensureSections(data) {
         var containers = findContainers();
         if (!containers.length) {
             return;
@@ -404,22 +420,121 @@
             added.push(section);
         });
 
-        if (!added.length) {
+        added.forEach(function (section) {
+            if (!section.isConnected) {
+                return;
+            }
+
+            fill(section, data);
+
+            if (section.parentNode) {
+                place(section.parentNode, section);
+            }
+        });
+    }
+
+    /**
+     * True when the Modular Home plugin is rendering this page. It publishes HssPageMeta before it
+     * builds its sections, so this is answerable at the point the row would otherwise be inserted.
+     */
+    function isModularHomeActive() {
+        return !!window.HssPageMeta;
+    }
+
+    /**
+     * Takes down a row this script drew earlier. Reached when Modular Home finishes loading after the
+     * first scan, which is the ordinary sequence: its script and this one race.
+     */
+    function removeOwnSections() {
+        var sections = document.querySelectorAll('.' + SECTION_CLASS);
+        Array.prototype.forEach.call(sections, function (section) {
+            section.remove();
+        });
+    }
+
+    function normalizeId(value) {
+        return typeof value === 'string' ? value.replace(/-/g, '').toLowerCase() : '';
+    }
+
+    function findItemForCard(card, items) {
+        var cardId = normalizeId(card.getAttribute('data-id'));
+        if (!cardId) {
+            return null;
+        }
+
+        for (var i = 0; i < items.length; i++) {
+            if (items[i].libraryItemId && normalizeId(items[i].libraryItemId) === cardId) {
+                return items[i];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Adds a Request button to the cards Modular Home rendered for JellyNext's section.
+     *
+     * Best effort by design: a card whose season cannot be identified, or a section that is not on
+     * the page, is left exactly as Modular Home drew it. The card's own play overlay still requests
+     * the season - it plays the virtual stub - so the worst case is a row without the shortcut, never
+     * a broken row.
+     */
+    function decorateSection(data) {
+        var sectionId = data && data.modularHome && data.modularHome.sectionId;
+        var items = (data && data.items) || [];
+        if (!sectionId || !items.length) {
+            return;
+        }
+
+        var cards = document.querySelectorAll('.' + sectionId + ' .card');
+        if (!cards.length) {
+            return;
+        }
+
+        addStyles();
+
+        Array.prototype.forEach.call(cards, function (card) {
+            if (card.querySelector('.jellynextButton')) {
+                return;
+            }
+
+            var item = findItemForCard(card, items);
+            if (!item) {
+                return;
+            }
+
+            var button = buildRequestButton(item);
+            button.classList.add('jellynextDecoratedButton');
+            (card.querySelector('.cardBox') || card).appendChild(button);
+        });
+    }
+
+    function scan() {
+        if (!isSignedIn()) {
             return;
         }
 
         loadData(false).then(function (data) {
-            added.forEach(function (section) {
-                if (!section.isConnected) {
-                    return;
+            if (!data) {
+                return;
+            }
+
+            // Modular Home replaces the home screen and renders JellyNext's own section from the same
+            // content, so drawing a second row here would show the user the same shows twice - and in
+            // the wrong place, since its sections are ordered with a CSS `order` this row has none of.
+            if (isModularHomeActive() && data.modularHome && data.modularHome.enabled) {
+                removeOwnSections();
+
+                if (data.modularHome.decorate) {
+                    decorateSection(data);
                 }
 
-                fill(section, data);
+                return;
+            }
 
-                if (section.parentNode) {
-                    place(section.parentNode, section);
-                }
-            });
+            if (data.enabled !== false) {
+                ensureSections(data);
+            }
         });
     }
 
@@ -432,7 +547,7 @@
         setTimeout(function () {
             state.scheduled = false;
             try {
-                ensureSections();
+                scan();
             } catch (error) {
                 console.error('[JellyNext] Widget failed', error);
             }

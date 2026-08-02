@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- **The New Seasons row can now be a Modular Home section.** [Modular Home](https://github.com/IAmParadox27/jellyfin-plugin-home-sections) replaces the Jellyfin home screen, which left the widget row nowhere sensible to sit — it is not one of Modular Home's sections, so it could not be ordered with them and always landed near the top. JellyNext now registers New Seasons as a proper section, so each user places it themselves. Enable it on the **Widget** tab; the tab reports whether Modular Home was found, and each user then switches the section on in their own Modular Home settings
+  - **The Request button comes too.** Modular Home draws third-party sections with Jellyfin's standard cards, which have no place for a plugin's button, so JellyNext adds one from the browser — the same technique Modular Home uses for its own request button. It can be turned off, in which case the card's ordinary play button is the request: it plays the stub, which downloads the season exactly as the Next Seasons library does, and works on TV layouts too
+  - **The same shows are never listed twice.** While the integration is on, the standalone widget row stands down on Modular Home's home screen
+  - The section lists exactly what the widget and the Next Seasons library list, including the per-user "New Release Window" filter, and costs no extra Trakt requests
+
 ## v1.9.7.0
 
 ### Bug Fixes

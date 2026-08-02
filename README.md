@@ -123,6 +123,7 @@ Features:
 - **Season Artwork, Name, Season, Year, Episodes**: The season's own poster where Jellyfin or your metadata providers have one, the show's picture otherwise, and Trakt as a last resort
 - **Same Content as the Library**: Shows exactly what your Next Seasons library holds, including your "New Release Window" filter — no extra Trakt requests
 - **Any Download Integration**: Requests go through whichever backend is configured (Radarr/Sonarr, Jellyseerr or a webhook), attributed to the user who pressed the button
+- **Works With Modular Home**: Optionally registers the row as a proper [Modular Home](https://github.com/IAmParadox27/jellyfin-plugin-home-sections) section, so each user places it themselves — Request button included
 
 ### 🎨 Native Jellyfin Integration
 - **Standard Metadata**: Uses Jellyfin's built-in TMDB/TVDB metadata providers (no separate API key needed)
@@ -549,6 +550,34 @@ Ctrl+F5.
 **Note**: the widget and the virtual library show the same thing and can be used together — the
 library remains the only option on native client apps, which cannot load plugin scripts.
 
+### The Widget and the Modular Home Plugin
+
+[Modular Home](https://github.com/IAmParadox27/jellyfin-plugin-home-sections) (listed in its own
+catalogue as "Home Screen Sections") replaces the Jellyfin home screen with sections each user turns
+on and orders themselves. On a server running it, the widget row above has nowhere sensible to go —
+it is not one of those sections, so it cannot be ordered with them. JellyNext can instead register
+New Seasons *as* a Modular Home section:
+
+- **Enable it** on the **Widget** tab, under **Modular Home**. The tab reports whether Modular Home
+  was found on the server.
+- **Each user then enables the section** in their own Modular Home settings (hamburger menu →
+  Modular Home). Nothing appears until they do — this is Modular Home's own opt-in, not JellyNext's,
+  and it is the most common reason the row seems to be missing.
+- **The contents are identical** to the widget row and the Next Seasons library: same shows, same
+  order, same per-user "New Release Window" filter, no extra Trakt requests.
+- **The Request button is still there**, added to Modular Home's cards by JellyNext's script. Modular
+  Home renders third-party sections with Jellyfin's standard cards, which have no place for a
+  plugin's button, so it has to be added from the browser afterwards. You can turn that off, in which
+  case the card's ordinary **play** button is the request — it plays the stub, which downloads the
+  season exactly as the Next Seasons library does, and works on TV layouts too.
+- **While this is on, the standalone widget row is not drawn** on top of Modular Home's home screen,
+  so the same shows are never listed twice.
+- **Cards are landscape**, because Modular Home draws every third-party section that way. A server
+  admin can change it to portrait for this section in Modular Home's own settings.
+
+**Note**: Modular Home itself requires the **File Transformation** and **Plugin Pages** plugins from
+the same author; see its installation guide.
+
 ### Downloading Content
 
 **How It Works:**
@@ -746,6 +775,9 @@ Jellyfin.Plugin.JellyNext/
 │   ├── NewSeasonNotificationService.cs  # New season email digests
 │   ├── NextSeasonsWidgetService.cs  # Backs the home screen widget (contents, requests, artwork)
 │   ├── WebScriptInjector.cs      # Adds/removes the widget script tag in the web client
+│   ├── ModularHomeBridge.cs      # Reflection bridge registering a Modular Home section
+│   ├── ModularHomeRegistrationService.cs  # Keeps that section registered
+│   ├── ModularHomeSectionHandler.cs  # Answers Modular Home's request for the section contents
 │   ├── PlaybackInterceptor.cs    # Detects virtual playback, routes to download provider
 │   ├── JellyseerrService.cs      # Jellyseerr API client (user import, requests)
 │   ├── RadarrService.cs          # Radarr API client (native mode)
@@ -907,6 +939,32 @@ Contributions are welcome! Please:
 **"Request says it failed"**
 - The widget uses the same download integration as playback, so the cause is the same: check the
   Downloads tab configuration and the Jellyfin log for the response from Radarr/Sonarr/Jellyseerr
+
+### Modular Home Section Issues
+
+**"The section doesn't appear in Modular Home"**
+- **Each user has to enable it themselves**, in their own Modular Home settings (hamburger menu →
+  Modular Home). A newly registered section is off for everyone until they do. This is by far the
+  most common cause
+- Check the **Widget** tab's Modular Home status line. If it says the plugin was not detected, the
+  section was never registered — Modular Home has to be installed and enabled first
+- Look for `Registered the 'jellynext-new-seasons' section with Modular Home` in the Jellyfin log.
+  JellyNext registers a few seconds after startup and re-asserts it periodically, because Modular
+  Home keeps registrations in memory only and loses them when it reloads
+- The section is empty when the user has no new seasons, and also when the **Next Seasons virtual
+  library has not been set up or scanned** — the section answers with your real library items, so
+  the stub files have to exist and have been picked up by a scan
+
+**"The section is there but the cards have no Request button"**
+- Check **Add a Request button to the Modular Home cards** on the Widget tab
+- Reload with Ctrl+F5 — the button is added by JellyNext's script, which is cached with `index.html`
+- The button is added to Modular Home's own cards, so a Modular Home update that changes its markup
+  can stop it appearing. The card's **play** button still requests the season in that case
+- Native client apps cannot load plugin scripts, so they never show the button. Play still works
+
+**"The cards are landscape, not portrait"**
+- Modular Home draws every third-party section as landscape. Change it for this section in Modular
+  Home's own settings; JellyNext cannot set it from its side
 
 ### Download Issues
 

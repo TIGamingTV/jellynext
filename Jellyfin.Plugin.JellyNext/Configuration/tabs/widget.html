@@ -54,6 +54,51 @@
     </div>
 </div>
 
+<!-- Modular Home integration -->
+<div class="verticalSection">
+    <h3 class="sectionTitle">Modular Home</h3>
+    <div class="fieldDescription" style="margin-bottom: 1em;">
+        The <strong>Modular Home</strong> plugin (also listed as "Home Screen Sections") replaces the
+        Jellyfin home screen with sections each user arranges themselves. JellyNext can register its
+        New Seasons row as one of those sections, so it lands where the user put it instead of being
+        squeezed in above or below everything.
+    </div>
+
+    <div class="fieldDescription" style="margin-bottom: 1em;" id="ModularHomeStatus">
+        Checking for Modular Home…
+    </div>
+
+    <div class="checkboxContainer checkboxContainer-withDescription">
+        <label>
+            <input is="emby-checkbox" type="checkbox" id="ModularHomeIntegrationEnabled" />
+            <span>Register a New Seasons section with Modular Home</span>
+        </label>
+        <div class="fieldDescription checkboxFieldDescription">
+            Uses the same shows, order and per-user filters as the widget row above. Two things are
+            worth knowing: each user must still switch the section on in their own
+            <strong>Modular Home</strong> settings before it appears, and Modular Home draws
+            third-party sections as landscape cards — a server admin can change that to portrait per
+            section in Modular Home's own settings. While this is on, the widget row above is not
+            drawn on top of Modular Home's home screen, so the same shows are not listed twice.
+            Default: disabled.
+        </div>
+    </div>
+
+    <div class="checkboxContainer checkboxContainer-withDescription">
+        <label>
+            <input is="emby-checkbox" type="checkbox" id="ModularHomeRequestButtonEnabled" />
+            <span>Add a Request button to the Modular Home cards</span>
+        </label>
+        <div class="fieldDescription checkboxFieldDescription">
+            Modular Home renders third-party sections with Jellyfin's standard cards, which have no
+            place for a plugin's button, so JellyNext adds one from the browser afterwards. With this
+            off, no script is needed at all and the card's ordinary play button is the request — it
+            plays the stub, which downloads the season exactly as the Next Seasons library does. Leave
+            it off if the button ever fails to appear after a Modular Home update. Default: enabled.
+        </div>
+    </div>
+</div>
+
 <!-- Artwork troubleshooting -->
 <div class="verticalSection">
     <h3 class="sectionTitle">Check Artwork</h3>
