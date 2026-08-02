@@ -14,17 +14,6 @@ namespace Jellyfin.Plugin.JellyNext.Helpers;
 public static class SeasonReleaseHelper
 {
     /// <summary>
-    /// Assumed gap between episodes of a season that is part-way through airing.
-    /// </summary>
-    /// <remarks>
-    /// Trakt reports a season's premiere date and how many of its episodes have aired, but not when
-    /// the most recent one did, so the release cadence has to be assumed to place it. Weekly is the
-    /// overwhelmingly common one, and the estimate is only ever used to decide which side of a
-    /// cut-off the season falls on.
-    /// </remarks>
-    private const double AssumedEpisodeIntervalDays = 7;
-
-    /// <summary>
     /// Determines whether a season is currently airing.
     /// </summary>
     /// <param name="show">The cached show.</param>
@@ -43,20 +32,17 @@ public static class SeasonReleaseHelper
     /// Determines whether a season counts as a new release.
     /// </summary>
     /// <param name="firstAired">The season's premiere date, if known.</param>
-    /// <param name="isAiring">Whether the season is part-way through airing.</param>
-    /// <param name="airedEpisodes">How many of the season's episodes have aired.</param>
-    /// <param name="windowDays">How many days of the season's latest release still count as new.</param>
-    /// <returns>True when the season last released an episode inside the window.</returns>
+    /// <param name="windowDays">How many days after its release a season still counts as new.</param>
+    /// <returns>True when the season was released inside the window.</returns>
     /// <remarks>
-    /// The window is measured from the season's premiere, or - for a season part-way through its run -
-    /// from its most recently aired episode, which keeps long and split-cour seasons in scope past a
-    /// cut-off their premiere alone would fall outside of. Airing is deliberately not an unconditional
-    /// pass: a weekly season stays "new" for as long as it is running, so a show the user has decided
-    /// to skip could never be aged out however short a window they chose. A season with no premiere
-    /// date is excluded - this filter is meant to exclude by default rather than leak the backlog
-    /// back in.
+    /// The window runs from the season's release and nothing else, so a season always disappears once
+    /// it is that many days old. Airing used to extend it - first as an unconditional pass, then
+    /// measured from the latest episode - and both readings mean a weekly season outlives the window
+    /// the user set, which is the one thing this setting exists to prevent. A season with no premiere
+    /// date is excluded: the filter is meant to exclude by default rather than leak the backlog back
+    /// in.
     /// </remarks>
-    public static bool IsRecentlyReleased(DateTime? firstAired, bool isAiring, int airedEpisodes, int windowDays)
+    public static bool IsRecentlyReleased(DateTime? firstAired, int windowDays)
     {
         if (!firstAired.HasValue)
         {
@@ -64,27 +50,10 @@ public static class SeasonReleaseHelper
         }
 
         var value = firstAired.Value;
-        var premiered = value.Kind == DateTimeKind.Unspecified
+        var released = value.Kind == DateTimeKind.Unspecified
             ? DateTime.SpecifyKind(value, DateTimeKind.Utc)
             : value.ToUniversalTime();
 
-        var now = DateTime.UtcNow;
-        var latestRelease = premiered;
-
-        if (isAiring && airedEpisodes > 1)
-        {
-            var estimated = premiered.AddDays((airedEpisodes - 1) * AssumedEpisodeIntervalDays);
-
-            // An estimate in the future means the episodes went out faster than the assumed cadence -
-            // a batch drop with later parts still to come is the usual case - so the cadence cannot be
-            // trusted to place the last episode, and the premiere is the honest anchor. Taking the
-            // estimate anyway would put every such season permanently inside the window.
-            if (estimated <= now)
-            {
-                latestRelease = estimated;
-            }
-        }
-
-        return latestRelease >= now.AddDays(-Math.Clamp(windowDays, 1, 3650));
+        return released >= DateTime.UtcNow.AddDays(-Math.Clamp(windowDays, 1, 3650));
     }
 }

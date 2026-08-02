@@ -88,13 +88,6 @@ public class NextSeasonWidgetItem
     public string? FallbackImagePath { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether this season has already been requested from the widget
-    /// since the server started.
-    /// </summary>
-    [JsonPropertyName("requested")]
-    public bool Requested { get; set; }
-
-    /// <summary>
     /// Gets or sets the Jellyfin id of the virtual library item backing this row, if it has been
     /// scanned in.
     /// </summary>

@@ -144,11 +144,7 @@ public class NewSeasonNotificationService
 
         return _contentCache.GetCachedContent(userId, "nextseasons")
             .Where(item => item.TvdbId.HasValue && item.SeasonNumber.HasValue)
-            .Where(item => SeasonReleaseHelper.IsRecentlyReleased(
-                item.SeasonFirstAired,
-                item.SeasonIsAiring,
-                item.SeasonAiredEpisodes ?? 0,
-                windowDays))
+            .Where(item => SeasonReleaseHelper.IsRecentlyReleased(item.SeasonFirstAired, windowDays))
             .Where(item => !alreadyNotified.Contains((item.TvdbId!.Value, item.SeasonNumber!.Value)))
             .OrderByDescending(item => item.SeasonFirstAired ?? DateTime.MinValue)
             .ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)

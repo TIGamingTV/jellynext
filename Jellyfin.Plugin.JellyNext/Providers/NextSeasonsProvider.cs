@@ -238,7 +238,8 @@ public class NextSeasonsProvider : IContentProvider
             return (null, "next season has not aired");
         }
 
-        if (traktUser.NextSeasonsRecentOnly && !IsRecentlyReleased(cachedShow, cachedSeason, traktUser))
+        if (traktUser.NextSeasonsRecentOnly
+            && !SeasonReleaseHelper.IsRecentlyReleased(cachedSeason.FirstAired, traktUser.NextSeasonsRecentDays))
         {
             var premiered = cachedSeason.FirstAired?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "unknown";
             hiddenExamples.Add($"{cachedShow.Title} S{nextSeasonNumber} (premiered {premiered})");
@@ -286,22 +287,5 @@ public class NextSeasonsProvider : IContentProvider
                 Genres = cachedShow.Genres
             },
             null);
-    }
-
-    /// <summary>
-    /// Determines whether a season counts as a new release for this user's window.
-    /// </summary>
-    /// <remarks>
-    /// Backs the opt-in "recently released seasons only" filter, which exists because the default
-    /// behaviour surfaces the next season of every partially watched show - including shows that
-    /// ended years ago - rather than only what has just come out.
-    /// </remarks>
-    private bool IsRecentlyReleased(ShowCacheEntry show, SeasonMetadata season, TraktUser traktUser)
-    {
-        return SeasonReleaseHelper.IsRecentlyReleased(
-            season.FirstAired,
-            SeasonReleaseHelper.IsAiring(show, season),
-            season.AiredEpisodes,
-            traktUser.NextSeasonsRecentDays);
     }
 }
