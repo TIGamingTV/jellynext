@@ -9,6 +9,19 @@
   - **The same shows are never listed twice.** While the integration is on, the standalone widget row stands down on Modular Home's home screen
   - The section lists exactly what the widget and the Next Seasons library list, including the per-user "New Release Window" filter, and costs no extra Trakt requests
 
+## v1.9.7.0
+
+### Bug Fixes
+
+- **A season that was still airing counted as new forever, whatever the release window was set to**
+  - "Only Newly Released Seasons" passed any season part-way through its run without looking at a date at all. A weekly show therefore stayed in Next Seasons — and in the widget — for its entire run, and shortening the window to a few days did nothing, so a show you had decided to skip could not be aged out
+  - The window is now measured from the season's most recent release: its premiere, or the latest episode to have aired for a season still running. Long and split-cour seasons still stay in scope while they are airing, which is what the airing rule was for, but they now leave once they stop — and a narrow window means what it says. The same fix applies to new season emails, which share the rule
+  - Trakt does not report when a season's last episode aired, so it is placed from the premiere and the aired episode count assuming a weekly cadence. Where that estimate lands in the future the episodes went out faster than weekly — a batch drop with later parts still listed — and the premiere is used instead, so those seasons age out normally too
+
+### Improvements
+
+- **Changing a user's Next Seasons filter now queues a content sync immediately.** The library and the widget are both built from cached content, so a narrowed window previously took up to six hours to show any effect, which read as the setting having done nothing
+
 ## v1.9.6.0
 
 ### Bug Fixes

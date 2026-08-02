@@ -301,6 +301,7 @@ public class NextSeasonsProvider : IContentProvider
         return SeasonReleaseHelper.IsRecentlyReleased(
             season.FirstAired,
             SeasonReleaseHelper.IsAiring(show, season),
+            season.AiredEpisodes,
             traktUser.NextSeasonsRecentDays);
     }
 }
