@@ -9,6 +9,16 @@
     "imageUrl": "https://raw.githubusercontent.com/TIGamingTV/jellynext/main/images/jellynext_logo.png",
     "versions": [
       {
+        "version": "1.9.9.0",
+        "changelog": "### Bug Fixes\n\n- **A season released weeks ago still counted as new, whatever the release window was set to**\n  - v1.9.7.0 replaced the \"still airing is always new\" pass with the window measured from the season's most recent episode. For a weekly show that episode is never more than a few days old, so a season released weeks ago still sat inside a four-day window for four days out of every seven — any rule anchored to the newest episode outlives the window on a show that is still running\n  - The window now runs from the season's release date and nothing else: a season disappears once it is that many days old, airing or not. New season emails share the rule and follow\n- **The New Seasons row kept offering seasons you had already dealt with**\n  - A season you requested stayed on the row with the button reading \"Requested\" until it finished downloading. The card now leaves the row as soon as the request is accepted, and stays off it for 14 days — long enough for any normal download, and short enough that a request which went nowhere is offered again rather than lost\n  - A season that arrived on the server was only noticed by the six-hourly sync. The library is now re-checked every time the row loads, so a season you already have drops off it straight away. The same re-check applies your \"New Release Window\", so a season ages out on the day rather than at the next sync\n  - All three apply to the Modular Home section as well as the plugin's own row, since both are built from the same list",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/jellynext/releases/download/v1.9.9.0/jellynext-v1.9.9.0.zip",
+        "checksum": "c23bdf3bf92fd83b338f8e55db6e01d3",
+        "timestamp": "2026-08-02T13:16:29Z",
+        "repositoryName": "JellyNext",
+        "repositoryUrl": "https://github.com/TIGamingTV/jellynext"
+      },
+      {
         "version": "1.9.8.0",
         "changelog": "Release v1.9.8.0",
         "targetAbi": "10.11.0.0",
