@@ -708,11 +708,7 @@ public class VirtualLibraryManager
 
     private string CreateShowFolder(string userPath, ContentItem item)
     {
-        var title = SanitizeFilename(item.Title);
-        var year = item.Year?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "Unknown";
-        var tvdbId = item.TvdbId!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var showFolderName = $"{title} ({year}) [tvdbid-{tvdbId}]";
-        var showFolder = Path.Combine(userPath, showFolderName);
+        var showFolder = Path.Combine(userPath, GetShowFolderName(item));
 
         if (!Directory.Exists(showFolder))
         {
@@ -720,6 +716,41 @@ public class VirtualLibraryManager
         }
 
         return showFolder;
+    }
+
+    /// <summary>
+    /// Builds the folder name a show's stubs live in.
+    /// </summary>
+    /// <param name="item">The content item.</param>
+    /// <returns>The folder name, without any directory part.</returns>
+    /// <remarks>
+    /// Public because the folder is also a real Jellyfin library item, and callers that need to find
+    /// that item - the Modular Home section, which answers with library items rather than stub paths -
+    /// must derive the name exactly as it was written, sanitization included.
+    /// </remarks>
+    public static string GetShowFolderName(ContentItem item)
+    {
+        var title = SanitizeFilename(item.Title);
+        var year = item.Year?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "Unknown";
+        var tvdbId = item.TvdbId!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return $"{title} ({year}) [tvdbid-{tvdbId}]";
+    }
+
+    /// <summary>
+    /// Gets the full path of the folder holding a show's Next Seasons stub.
+    /// </summary>
+    /// <param name="userId">The user the virtual library belongs to.</param>
+    /// <param name="item">The content item, which must carry a TVDB id.</param>
+    /// <returns>The folder path, or null when the virtual library is not initialized or the item has no TVDB id.</returns>
+    public string? GetNextSeasonShowFolderPath(Guid userId, ContentItem item)
+    {
+        if (string.IsNullOrEmpty(_virtualLibraryPath) || !item.TvdbId.HasValue || item.TvdbId.Value == 0)
+        {
+            return null;
+        }
+
+        var userPath = GetUserLibraryPath(userId, VirtualLibraryContentType.ShowsNextSeasons);
+        return Path.Combine(userPath, GetShowFolderName(item));
     }
 
     /// <summary>

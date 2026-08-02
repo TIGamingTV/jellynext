@@ -40,6 +40,27 @@ public class LocalLibraryService
     }
 
     /// <summary>
+    /// Finds a library item by the path it was scanned from.
+    /// </summary>
+    /// <param name="path">The full path on disk.</param>
+    /// <param name="isFolder">Whether the path is a directory.</param>
+    /// <returns>The item if Jellyfin has scanned it, null otherwise.</returns>
+    /// <remarks>
+    /// Used to turn a virtual library stub path back into the real item Jellyfin created for it. Null
+    /// is the ordinary answer for a stub that has been written but not yet picked up by a scan, so
+    /// callers must treat it as "not available yet" rather than an error.
+    /// </remarks>
+    public BaseItem? FindByPath(string path, bool isFolder)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return null;
+        }
+
+        return _libraryManager.FindByPath(path, isFolder);
+    }
+
+    /// <summary>
     /// Finds a TV series in the local library by any of the IDs known for it.
     /// </summary>
     /// <param name="tvdbId">The TVDB ID, if known.</param>

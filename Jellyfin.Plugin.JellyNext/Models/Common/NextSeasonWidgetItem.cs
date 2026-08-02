@@ -93,4 +93,17 @@ public class NextSeasonWidgetItem
     /// </summary>
     [JsonPropertyName("requested")]
     public bool Requested { get; set; }
+
+    /// <summary>
+    /// Gets or sets the Jellyfin id of the virtual library item backing this row, if it has been
+    /// scanned in.
+    /// </summary>
+    /// <remarks>
+    /// This is the show folder under <c>jellynext-virtual/{userId}/shows_nextseasons</c>, which is a
+    /// real library item with real artwork. It is what the Modular Home section returns, and what the
+    /// widget script matches Modular Home's rendered cards on - those carry a Jellyfin item id and
+    /// know nothing about Trakt. Null when the virtual library has not been set up or scanned.
+    /// </remarks>
+    [JsonPropertyName("libraryItemId")]
+    public string? LibraryItemId { get; set; }
 }

@@ -320,6 +320,30 @@ public class PluginConfiguration : BasePluginConfiguration
     public WidgetPosition NextSeasonsWidgetPosition { get; set; } = WidgetPosition.Bottom;
 
     /// <summary>
+    /// Gets or sets a value indicating whether JellyNext registers a New Seasons section with the
+    /// Modular Home plugin.
+    /// </summary>
+    /// <remarks>
+    /// Modular Home replaces the home screen wholesale, so its users cannot place the injected widget
+    /// row themselves. Registering a section hands that placement back to them. Opt-in because it is
+    /// meaningless without Modular Home installed.
+    /// </remarks>
+    public bool ModularHomeIntegrationEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the widget script adds a Request button to the cards
+    /// Modular Home renders for JellyNext's section.
+    /// </summary>
+    /// <remarks>
+    /// Modular Home renders third-party sections with Jellyfin's stock card builder, which has no
+    /// hook for a per-card button, so the button has to be added client side afterwards. With this
+    /// off the card's ordinary play overlay is the request action - it plays the virtual stub, which
+    /// the playback interceptor already turns into a download - which costs a button but works on TV
+    /// layouts and does not depend on Modular Home's DOM.
+    /// </remarks>
+    public bool ModularHomeRequestButtonEnabled { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets the OAuth application identity JellyNext presents to Trakt.
     /// Defaults to <see cref="TraktAuthMode.Standalone"/> so existing installations keep working.
     /// </summary>

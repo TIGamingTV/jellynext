@@ -25,7 +25,39 @@ function normalizeWidgetPosition(value) {
 function initWidgetTab() {
     document.getElementById('CheckWidgetArtworkBtn').addEventListener('click', checkWidgetArtwork);
     populateWidgetDiagnosticsUsers();
+    loadModularHomeStatus();
     console.log('Widget tab initialized');
+}
+
+// "The row does not appear" has three quite different causes, and only two of them are visible from
+// the server: the plugin is not installed, or the section was never registered. The third - the user
+// has not enabled the section in Modular Home's own settings - is why the message says so.
+function loadModularHomeStatus() {
+    var element = document.getElementById('ModularHomeStatus');
+    if (!element) {
+        return;
+    }
+
+    ApiClient.fetch({
+        type: 'GET',
+        url: ApiClient.getUrl('JellyNext/Widget/ModularHome/Status'),
+        headers: { accept: 'application/json' }
+    }).then(function (response) {
+        return response.json();
+    }).then(function (result) {
+        if (!result.pluginDetected) {
+            element.textContent = 'Modular Home was not detected on this server. Install it first if '
+                + 'you want the New Seasons row to be one of its sections.';
+            return;
+        }
+
+        element.textContent = result.message
+            + ' The section is registered as "' + result.sectionId + '"; each user still has to '
+            + 'enable it in their own Modular Home settings.';
+    }).catch(function (error) {
+        console.error('Error checking Modular Home status:', error);
+        element.textContent = 'Could not check whether Modular Home is installed.';
+    });
 }
 
 // The users dropdown is filled from the same call the rest of the page uses; it is only ready after
@@ -118,6 +150,10 @@ function loadWidgetSettings(config) {
     document.getElementById('NextSeasonsWidgetLimit').value = config.NextSeasonsWidgetLimit || 12;
     document.getElementById('NextSeasonsWidgetPosition').value =
         normalizeWidgetPosition(config.NextSeasonsWidgetPosition);
+    document.getElementById('ModularHomeIntegrationEnabled').checked =
+        config.ModularHomeIntegrationEnabled === true;
+    document.getElementById('ModularHomeRequestButtonEnabled').checked =
+        config.ModularHomeRequestButtonEnabled !== false;
 }
 
 function saveWidgetSettings(config) {
@@ -131,4 +167,9 @@ function saveWidgetSettings(config) {
 
     config.NextSeasonsWidgetPosition =
         normalizeWidgetPosition(document.getElementById('NextSeasonsWidgetPosition').value);
+
+    config.ModularHomeIntegrationEnabled =
+        document.getElementById('ModularHomeIntegrationEnabled').checked;
+    config.ModularHomeRequestButtonEnabled =
+        document.getElementById('ModularHomeRequestButtonEnabled').checked;
 }

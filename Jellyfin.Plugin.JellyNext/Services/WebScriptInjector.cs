@@ -89,7 +89,7 @@ public class WebScriptInjector : IHostedService
 
     private void Apply()
     {
-        var enabled = Plugin.Instance?.Configuration.NextSeasonsWidgetEnabled == true;
+        var enabled = IsScriptNeeded();
 
         try
         {
@@ -137,6 +137,27 @@ public class WebScriptInjector : IHostedService
                 "Could not update the web client's index.html. The New Seasons widget will not be shown. "
                 + "Jellyfin needs write access to its web directory for this feature.");
         }
+    }
+
+    /// <summary>
+    /// Determines whether the client script has any work to do.
+    /// </summary>
+    /// <returns>True when the script should be loaded by the web client.</returns>
+    /// <remarks>
+    /// The script draws the standalone widget row, but it also decorates the cards Modular Home
+    /// renders for JellyNext's section with a Request button - Modular Home has no server side hook
+    /// for one. Either feature on its own is reason enough to load it.
+    /// </remarks>
+    private static bool IsScriptNeeded()
+    {
+        var configuration = Plugin.Instance?.Configuration;
+        if (configuration == null)
+        {
+            return false;
+        }
+
+        return configuration.NextSeasonsWidgetEnabled
+            || (configuration.ModularHomeIntegrationEnabled && configuration.ModularHomeRequestButtonEnabled);
     }
 
     /// <summary>
