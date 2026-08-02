@@ -288,22 +288,50 @@
         var button = document.createElement('button');
         button.className = 'jellynextButton';
         button.type = 'button';
+        button.textContent = 'Request';
+        button.addEventListener('click', function (event) {
+            // On a Modular Home card the button sits inside Jellyfin's own click surface, which
+            // would otherwise navigate to the item as well.
+            event.preventDefault();
+            event.stopPropagation();
+            requestSeason(item, button);
+        });
 
-        if (item.requested) {
-            button.textContent = 'Requested';
-            button.disabled = true;
-        } else {
-            button.textContent = 'Request';
-            button.addEventListener('click', function (event) {
-                // On a Modular Home card the button sits inside Jellyfin's own click surface, which
-                // would otherwise navigate to the item as well.
-                event.preventDefault();
-                event.stopPropagation();
-                requestSeason(item, button);
+        return button;
+    }
+
+    /**
+     * Takes the card a request was just made from off the screen. The row offers seasons to get, so a
+     * season already on its way is nothing to offer - and waiting for the next render to drop it would
+     * leave the card sitting there looking as though the button did nothing.
+     *
+     * Found from the button rather than passed in, so it works the same on this script's own cards and
+     * on the ones Modular Home rendered. Where the card cannot be found the button is left reading
+     * "Requested", which is the same feedback as before.
+     */
+    function dropCard(item, button) {
+        if (state.data && state.data.items) {
+            state.data.items = state.data.items.filter(function (other) {
+                return other.traktId !== item.traktId || other.seasonNumber !== item.seasonNumber;
             });
         }
 
-        return button;
+        var card = button.closest ? button.closest('.card') : null;
+        if (!card || !card.parentNode) {
+            return;
+        }
+
+        var row = card.parentNode;
+        row.removeChild(card);
+
+        // Only this script's own row is ours to empty out; Modular Home owns the layout of its
+        // sections, and re-renders them on the next navigation anyway.
+        if (!row.children.length && row.classList.contains('jellynextRow')) {
+            var section = row.parentNode;
+            if (section && section.classList.contains(SECTION_CLASS)) {
+                section.style.display = 'none';
+            }
+        }
     }
 
     function requestSeason(item, button) {
@@ -321,10 +349,9 @@
                 throw new Error(result.message || 'The request was not accepted.');
             }
 
-            item.requested = true;
             button.textContent = 'Requested';
-            button.title = (result && result.message) || '';
             state.fetchedAt = 0;
+            dropCard(item, button);
         }).catch(function (error) {
             console.error('[JellyNext] Request failed', error);
             button.disabled = false;

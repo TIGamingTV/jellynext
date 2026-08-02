@@ -114,7 +114,7 @@ Features:
 ### 📧 New Season Email Notifications
 - **Told When a Season Drops**: Emails a user when a new season of a show they watch is released
 - **One Digest, One Announcement**: All new seasons found in a sync go out in a single email, and each season is only ever announced once
-- **Genuinely New Only**: A season qualifies if its latest release falls inside the notification window — finishing an old show does not produce an email
+- **Genuinely New Only**: A season qualifies if it was released inside the notification window — finishing an old show does not produce an email
 - **Per-User Opt-In**: Each user enables notifications and sets their own address (Jellyfin accounts have no email address of their own)
 
 ### 🖥️ New Seasons Widget (Web Interface)
@@ -229,7 +229,7 @@ After authorization, configure what to sync for each user:
 
 **Next Seasons Filters:**
 - ☐ **Only Newly Released Seasons**: Only suggest a next season if it was released recently. Off by default, which suggests the next unwatched season of every show you haven't finished, including shows that ended years ago
-- **New Release Window (days)**: How long after its latest release a season still counts as new (1-3650, default: 90). Measured from the premiere, or from the most recent episode for a season that is still airing — so a long or split-cour season stays in scope while it is running, and drops out once it stops
+- **New Release Window (days)**: How long after its release a season still counts as new (1-3650, default: 90). Measured from the season's release date, so a season always disappears once it is this many days old — including one that is still airing
 
 **New Season Notifications:**
 - ☐ **Email Me About New Seasons**: Email this user when a new season of a show they watch is released. Requires **Sync Next Seasons**, and SMTP settings on the Notifications tab
@@ -436,7 +436,7 @@ Click **Save** when done.
 Go to **Dashboard → Plugins → JellyNext → Notifications tab**.
 
 1. Enable **New Season Email Notifications** (master switch — each user still opts in individually)
-2. **Announce Seasons Released Within (days)**: how recently a season must have been released to be announced (1-365, default: 30). Measured from the premiere, or from the most recent episode for a season that is still airing
+2. **Announce Seasons Released Within (days)**: how recently a season must have been released to be announced (1-365, default: 30), measured from its release date
 3. Fill in the SMTP server settings:
    - **SMTP Server** / **SMTP Port**: use port 587 (STARTTLS) or 25. **Port 465 (implicit SSL) is not supported** — providers that offer 465 practically always offer 587 as well
    - **Use STARTTLS**: leave enabled unless the server is a local relay without encryption
@@ -509,7 +509,7 @@ When enabled, JellyNext automatically monitors your Trakt watchlist and adds ite
 
 When enabled, JellyNext emails a user as new seasons of the shows they watch are released:
 
-- **What triggers one**: a season that has just entered the user's Next Seasons library — the next season they haven't watched, already aired, and not already in Jellyfin — *and* is a new release: its premiere, or its most recent episode if it is still airing, falls inside the notification window.
+- **What triggers one**: a season that has just entered the user's Next Seasons library — the next season they haven't watched, already aired, and not already in Jellyfin — *and* was released inside the notification window.
 - **What doesn't**: catching up on an old show. Finishing season 2 of a show that ended in 2015 makes season 3 a "next season", but nothing about it is new, so no email is sent.
 - **One email per sync**: everything found in a run goes out as a single digest listing each show, season and premiere date.
 - **Announced once**: sent announcements are recorded in the plugin configuration, so a restart doesn't repeat them, and a season that airs over several months is not re-announced part-way through. Records are dropped after 400 days.
@@ -532,9 +532,13 @@ When enabled, the Jellyfin home screen gains a row of the shows you have an unwa
   what is being offered is a season, and are built from Jellyfin's own card markup, so they pick up
   your theme's fonts, colours, corners and hover behaviour.
 - **Pressing Request**: sends that season to whichever download integration is configured, exactly as
-  playing the stub in the virtual library does, attributed to the user who pressed it. The button then
-  reads "Requested" and stays that way until the season shows up in your library and the item
-  disappears from the list.
+  playing the stub in the virtual library does, attributed to the user who pressed it. The card then
+  leaves the row — there is nothing left to offer — and stays off it while the download runs. If the
+  request never turns into a download, the season is offered again after 14 days.
+- **What leaves the row**: a season you have requested, a season that has arrived on the server, and
+  a season that has aged out of your "New Release Window". All three are checked every time the row
+  loads rather than only on the six-hourly sync, so the row does not sit there out of date. The
+  Modular Home section is built from the same list and behaves the same way.
 - **Artwork**: the season's own picture wherever there is one. In order: the season as your library
   already holds it (with "display missing episodes" on, Jellyfin has the season's poster before you
   own a single episode of it), then the season from your metadata providers (TMDB, TheTVDB, whatever
@@ -1083,7 +1087,10 @@ A:
 A: Yes — enable "Only Newly Released Seasons" in the per-user settings. It keeps a show out of the library unless the season you're up next on was released within the release window (default 90 days), so the library becomes "what just came out for shows I watch" rather than a backlog list. Note that if you're several seasons behind on a show, its old next season stays hidden.
 
 **Q: A season I'm not interested in stays in Next Seasons however short I make the release window.**
-A: Fixed in v1.9.7.0. A season that was part-way through airing used to count as new no matter how old it was, so a weekly show stayed in the library for its whole run and no window could age it out. The window is now measured from the season's most recent episode instead, so it applies to airing seasons too. Changing the window also queues a content sync straight away, rather than leaving the old list in place until the next six-hourly run.
+A: Fixed in v1.9.9.0. A season part-way through airing used to count as new no matter how old it was, so a weekly show stayed in the library and on the widget for its whole run and no window could age it out. (v1.9.7.0 measured the window from the season's most recent episode, which for a weekly show is only ever a few days old, so a short window still did not remove it.) The window now runs from the season's release date and nothing else, so anything older than it disappears. Changing the window also queues a content sync straight away, rather than leaving the old list in place until the next six-hourly run.
+
+**Q: I requested a season from the New Seasons row and the card is still there.**
+A: Fixed in v1.9.9.0 — the card is removed as soon as the request is accepted, and stays off the row while the download runs. So is a season that has arrived on the server since the last sync: the library is re-checked on every load rather than waiting for the six-hourly sync to notice. A request that never turns into a download is offered again after 14 days. This applies to the Modular Home section as well as the plugin's own row.
 
 **Q: Why only 10 seasons for show recommendations?**
 A: Performance. Jellyfin scans can be slow with thousands of stub files. Enable "Limit Shows to Season 1" for even better performance.

@@ -7,6 +7,7 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.JellyNext.Helpers;
 using Jellyfin.Plugin.JellyNext.Models.Common;
 using Jellyfin.Plugin.JellyNext.Services.DownloadProviders;
 using MediaBrowser.Common.Net;
@@ -47,6 +48,16 @@ public class NextSeasonsWidgetService
     /// How long a show with no artwork anywhere is left alone before trying again.
     /// </summary>
     private static readonly TimeSpan ImageMissCacheDuration = TimeSpan.FromHours(12);
+
+    /// <summary>
+    /// How long a season stays hidden after being requested before it is offered again.
+    /// </summary>
+    /// <remarks>
+    /// Long enough for any normal download to have landed and been picked up by a library scan, after
+    /// which the library is what decides. Short enough that a request which quietly went nowhere is
+    /// not hidden indefinitely.
+    /// </remarks>
+    private static readonly TimeSpan RequestedRetention = TimeSpan.FromDays(14);
 
     /// <summary>
     /// How long to wait for an image host to answer before treating the artwork as unusable.
@@ -131,8 +142,6 @@ public class NextSeasonsWidgetService
     /// <returns>The widget items, limited to the configured item count.</returns>
     public IReadOnlyList<NextSeasonWidgetItem> GetItems(Guid userId)
     {
-        var requestedForUser = _requested.GetOrAdd(userId, _ => new ConcurrentDictionary<string, DateTime>());
-
         return GetContentItems(userId)
             .Select(item =>
             {
@@ -150,7 +159,6 @@ public class NextSeasonsWidgetService
                     IsAiring = item.SeasonIsAiring,
                     ImagePath = images.ImagePath,
                     FallbackImagePath = images.FallbackImagePath,
-                    Requested = requestedForUser.ContainsKey(GetRequestKey(item.TraktId, item.SeasonNumber!.Value)),
                     LibraryItemId = FindVirtualLibraryItem(userId, item)?.Id.ToString("N", CultureInfo.InvariantCulture)
                 };
             })
@@ -184,6 +192,63 @@ public class NextSeasonsWidgetService
     }
 
     /// <summary>
+    /// Determines whether the user has already requested a season through the widget.
+    /// </summary>
+    /// <remarks>
+    /// A request is forgotten again after <see cref="RequestedRetention"/>. Hiding the card is a
+    /// stronger claim than labelling it was: a request that never turns into a download would
+    /// otherwise take the season off the row until the server restarts, with nothing to show for it.
+    /// The library check above is the durable answer; this only covers the gap before the download
+    /// lands.
+    /// </remarks>
+    private bool IsRequested(Guid userId, int traktId, int seasonNumber)
+    {
+        if (!_requested.TryGetValue(userId, out var requestedForUser))
+        {
+            return false;
+        }
+
+        var key = GetRequestKey(traktId, seasonNumber);
+        if (!requestedForUser.TryGetValue(key, out var requestedAt))
+        {
+            return false;
+        }
+
+        if (DateTime.UtcNow - requestedAt <= RequestedRetention)
+        {
+            return true;
+        }
+
+        requestedForUser.TryRemove(key, out _);
+        return false;
+    }
+
+    /// <summary>
+    /// Determines whether the offered season is already in the Jellyfin library.
+    /// </summary>
+    private bool IsInLibrary(ContentItem item)
+    {
+        try
+        {
+            return _localLibraryService.DoesSeasonExist(
+                item.TvdbId,
+                item.TmdbId,
+                item.ImdbId,
+                item.SeasonNumber!.Value);
+        }
+        catch (Exception ex)
+        {
+            // A library lookup that fails should not empty the row.
+            _logger.LogWarning(
+                ex,
+                "Could not check whether {Title} season {Season} is already in the library",
+                item.Title,
+                item.SeasonNumber);
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Gets the cached Next Seasons content for a user, in the order the widget lists it.
     /// </summary>
     /// <param name="userId">The Jellyfin user ID.</param>
@@ -191,15 +256,30 @@ public class NextSeasonsWidgetService
     /// <remarks>
     /// Exposed so the Modular Home section can answer with the same shows, in the same order, under
     /// the same per-user filters as the widget, without a second definition of any of it.
+    /// <para>
+    /// A season the user has asked for is dropped, and so is one that has since arrived in the
+    /// library: the row offers seasons to get, so a season already on its way or already there is
+    /// nothing to offer. The user's new-release window is re-applied here too. All three are decided
+    /// at read time rather than left to the content sync, which is up to six hours away - long enough
+    /// for a card to look like the button did nothing, or like the window setting does nothing.
+    /// </para>
     /// </remarks>
     public IReadOnlyList<ContentItem> GetContentItems(Guid userId)
     {
         var limit = Math.Clamp(Plugin.Instance?.Configuration.NextSeasonsWidgetLimit ?? 12, 1, 50);
+        var traktUser = UserHelper.GetTraktUser(userId);
+        var recentOnly = traktUser?.NextSeasonsRecentOnly == true;
+        var recentDays = traktUser?.NextSeasonsRecentDays ?? 90;
 
         return _cacheService.GetCachedContent(userId, ProviderName)
             .Where(item => item.Type == ContentType.Show && item.SeasonNumber.HasValue)
+            .Where(item => !recentOnly || SeasonReleaseHelper.IsRecentlyReleased(item.SeasonFirstAired, recentDays))
             .OrderByDescending(item => item.SeasonFirstAired ?? DateTime.MinValue)
             .ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)
+            .Where(item => !IsRequested(userId, item.TraktId, item.SeasonNumber!.Value))
+
+            // Streams, so the library is only queried for as many shows as it takes to fill the row.
+            .Where(item => !IsInLibrary(item))
             .Take(limit)
             .ToList();
     }

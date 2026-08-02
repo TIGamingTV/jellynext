@@ -1,6 +1,18 @@
 # Changelog
 
-## Unreleased
+## v1.9.9.0
+
+### Bug Fixes
+
+- **A season released weeks ago still counted as new, whatever the release window was set to**
+  - v1.9.7.0 replaced the "still airing is always new" pass with the window measured from the season's most recent episode. For a weekly show that episode is never more than a few days old, so a season released weeks ago still sat inside a four-day window for four days out of every seven — any rule anchored to the newest episode outlives the window on a show that is still running
+  - The window now runs from the season's release date and nothing else: a season disappears once it is that many days old, airing or not. New season emails share the rule and follow
+- **The New Seasons row kept offering seasons you had already dealt with**
+  - A season you requested stayed on the row with the button reading "Requested" until it finished downloading. The card now leaves the row as soon as the request is accepted, and stays off it for 14 days — long enough for any normal download, and short enough that a request which went nowhere is offered again rather than lost
+  - A season that arrived on the server was only noticed by the six-hourly sync. The library is now re-checked every time the row loads, so a season you already have drops off it straight away. The same re-check applies your "New Release Window", so a season ages out on the day rather than at the next sync
+  - All three apply to the Modular Home section as well as the plugin's own row, since both are built from the same list
+
+## v1.9.8.0
 
 ### Features
 
