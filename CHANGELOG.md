@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.9.11.0
+
+### Bug Fixes
+
+- **Playing anything in a virtual library failed with an FFmpeg error on Jellyfin 10.11.7 and later**
+  - Virtual items were `.strm` files holding the path of the plugin's dummy video. Jellyfin 10.11.7 hardened its `.strm` parser as part of [GHSA-j2hf-x4q5-47j3](https://github.com/jellyfin/jellyfin/security/advisories/GHSA-j2hf-x4q5-47j3) and now accepts only remote URLs, silently discarding a local path — so the `.strm` text file itself was handed to FFmpeg, which exited with code 183 and showed the client a fatal playback error
+  - Stub files are now real video files rather than pointers, so nothing has to be resolved out of them. They are symlinks to the dummy video where the operating system allows it, which costs no disk space; on Windows without Developer Mode or elevation, where symlinks are refused, the dummy video is copied instead
+  - The download itself was always triggered — the error appeared after the request was already queued — so this fixes the error message and the playback, not the requesting
+  - Existing `.strm` stubs are removed automatically on upgrade and rebuilt in the new form on the next sync. No configuration changes are needed
+
 ## v1.9.10.0
 
 ### Bug Fixes

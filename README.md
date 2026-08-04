@@ -127,7 +127,7 @@ Features:
 
 ### 🎨 Native Jellyfin Integration
 - **Standard Metadata**: Uses Jellyfin's built-in TMDB/TVDB metadata providers (no separate API key needed)
-- **Native Resolution**: Virtual libraries use standard .strm file naming conventions (`[tmdbid-X]`, `[tvdbid-X]`)
+- **Native Resolution**: Virtual libraries use standard file naming conventions (`[tmdbid-X]`, `[tvdbid-X]`)
 - **Seamless UI**: Virtual content appears alongside your real library with full metadata and artwork
 
 ## Installation
@@ -335,7 +335,7 @@ After linking Trakt and adding virtual libraries:
 
 3. **Monitor Progress**:
    - Check task logs for sync status
-   - Virtual library folders will be populated with `.strm` files
+   - Virtual library folders will be populated with stub video files
    - Jellyfin will automatically scan and add metadata
 
 4. **Verify Libraries**:
@@ -858,6 +858,7 @@ Contributions are welcome! Please:
 - **Token Refresh**: Trakt rotates refresh tokens on each refresh - always save new tokens
 - **TV Downloads**: Per-season monitoring (series monitored, but only specific season enabled)
 - **iOS/tvOS Fix**: Two dummy videos - short (2sec auto-stop) or long (1hr prevents "watched")
+- **Stub Files**: Real video files (symlinks to the dummy video, copies where symlinks are unavailable) - Jellyfin 10.11.7 stopped resolving local paths inside `.strm` files
 - **Config Validation**: Stub files auto-rebuild when dummy video setting changes
 - **Jellyfin 10.11**: UserDataManager requires `User` entity (not Guid), use `IUserManager.GetUserById()`
 - **Framework**: .NET 9.0 required
@@ -999,7 +1000,7 @@ Contributions are welcome! Please:
   - Check Radarr/Sonarr logs for specific error messages
   - Verify root folder has write permissions
   - Ensure quality profile exists and is active
-- Check TMDB/TVDB IDs are valid (verify in .strm filename: `[tmdbid-12345]`)
+- Check TMDB/TVDB IDs are valid (verify in the stub filename: `[tmdbid-12345]`)
 
 **"Anime not going to anime folder/profile"**
 - **Jellyseerr mode**:

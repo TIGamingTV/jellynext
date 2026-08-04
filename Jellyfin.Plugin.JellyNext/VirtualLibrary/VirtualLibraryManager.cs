@@ -17,7 +17,8 @@ namespace Jellyfin.Plugin.JellyNext.VirtualLibrary;
 public class VirtualLibraryManager
 {
     private const string VirtualLibraryFolderName = "jellynext-virtual";
-    private const string StubFileExtension = ".strm";
+    private const string StubFileExtension = ".mp4";
+    private const string LegacyStubFileExtension = ".strm";
     private const string DummyVideoFileName = "dummy.mp4";
     private const string DummyVideoShortFileName = "dummy_short.mp4";
     private const string KeepFileName = ".keep";
@@ -27,6 +28,8 @@ public class VirtualLibraryManager
     private string? _virtualLibraryPath;
     private string? _dummyVideoPath;
     private string? _dummyVideoShortPath;
+    private bool _symlinksUnsupported;
+    private bool _loggedMissingDummy;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="VirtualLibraryManager"/> class.
@@ -62,12 +65,12 @@ public class VirtualLibraryManager
                 _logger.LogInformation("Created virtual library directory: {Path}", _virtualLibraryPath);
             }
 
-            // Migrate old structure (clean up old .strm files in root)
-            MigrateOldStructure();
-
             // Create dummy video files for FFprobe compatibility
             CreateDummyVideo();
             CreateDummyVideoShort();
+
+            // Drop stubs written by older versions (see RemoveLegacyStubFiles)
+            RemoveLegacyStubFiles();
 
             // Initialize global directories if enabled
             InitializeGlobalDirectories();
@@ -131,7 +134,7 @@ public class VirtualLibraryManager
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not extract dummy video file - .strm files will use fallback URL");
+            _logger.LogWarning(ex, "Could not extract dummy video file - stub files will use the short dummy video");
         }
     }
 
@@ -219,7 +222,18 @@ public class VirtualLibraryManager
         }
     }
 
-    private void MigrateOldStructure()
+    /// <summary>
+    /// Deletes every .strm file left behind by an older version, anywhere under the virtual library.
+    /// </summary>
+    /// <remarks>
+    /// Stubs used to be .strm files holding the path of the dummy video. Jellyfin 10.11.7 hardened its
+    /// .strm parser (GHSA-j2hf-x4q5-47j3): <c>ProbeProvider.FetchShortcutInfo</c> now only accepts an
+    /// absolute http/https/rtsp/rtp URL and drops anything else, so a local path leaves ShortcutPath empty
+    /// and the .strm text file itself is handed to FFmpeg - which fails with exit code 183 (issue #21).
+    /// The stubs are real video files now, so the old ones have to go or every folder would carry both.
+    /// This also covers the pre-per-user layout, where stubs sat directly in the virtual library root.
+    /// </remarks>
+    private void RemoveLegacyStubFiles()
     {
         if (string.IsNullOrEmpty(_virtualLibraryPath))
         {
@@ -228,26 +242,25 @@ public class VirtualLibraryManager
 
         try
         {
-            // Check for old .strm files in the root of jellynext-virtual
-            var oldStubFiles = Directory.GetFiles(_virtualLibraryPath, $"*{StubFileExtension}", SearchOption.TopDirectoryOnly);
-            if (oldStubFiles.Length > 0)
+            var legacyStubs = Directory.GetFiles(_virtualLibraryPath, $"*{LegacyStubFileExtension}", SearchOption.AllDirectories);
+            if (legacyStubs.Length == 0)
             {
-                _logger.LogInformation(
-                    "Found {Count} old stub files in root directory, cleaning up for migration to per-user structure",
-                    oldStubFiles.Length);
-
-                foreach (var file in oldStubFiles)
-                {
-                    File.Delete(file);
-                    _logger.LogDebug("Deleted old stub file: {File}", file);
-                }
-
-                _logger.LogInformation("Migration complete. Old stub files removed. New per-user structure will be created.");
+                return;
             }
+
+            foreach (var file in legacyStubs)
+            {
+                File.Delete(file);
+                _logger.LogDebug("Deleted legacy stub file: {File}", file);
+            }
+
+            _logger.LogInformation(
+                "Removed {Count} legacy .strm stub files - stubs are now real video files",
+                legacyStubs.Length);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during migration from old structure");
+            _logger.LogError(ex, "Error removing legacy .strm stub files");
         }
     }
 
@@ -522,10 +535,10 @@ public class VirtualLibraryManager
     {
         var existingFiles = Directory.GetFiles(userPath, $"*{StubFileExtension}");
 
-        // Check if stub file content matches current configuration
-        if (existingFiles.Length > 0 && !DoesStubContentMatch(existingFiles[0]))
+        // Check if existing stubs still match the configured dummy video
+        if (existingFiles.Length > 0 && !DoesStubMatchConfiguration(existingFiles[0]))
         {
-            _logger.LogInformation("Stub file content doesn't match current configuration, flushing directory: {Path}", userPath);
+            _logger.LogInformation("Stub files no longer match current configuration, flushing directory: {Path}", userPath);
             FlushDirectory(userPath);
             existingFiles = Array.Empty<string>();
         }
@@ -565,8 +578,7 @@ public class VirtualLibraryManager
 
             if (!File.Exists(stubFile))
             {
-                var content = GetStubFileContent("movie");
-                File.WriteAllText(stubFile, content);
+                WriteStubFile(stubFile);
                 _logger.LogDebug("Created stub file: {Title} ({Year})", item.Title, year);
             }
         }
@@ -576,13 +588,13 @@ public class VirtualLibraryManager
     {
         var existingDirs = Directory.GetDirectories(userPath);
 
-        // Check if stub file content matches current configuration
+        // Check if existing stubs still match the configured dummy video
         if (existingDirs.Length > 0)
         {
             var firstShowStubs = Directory.GetFiles(existingDirs[0], $"*{StubFileExtension}");
-            if (firstShowStubs.Length > 0 && !DoesStubContentMatch(firstShowStubs[0]))
+            if (firstShowStubs.Length > 0 && !DoesStubMatchConfiguration(firstShowStubs[0]))
             {
-                _logger.LogInformation("Stub file content doesn't match current configuration, flushing directory: {Path}", userPath);
+                _logger.LogInformation("Stub files no longer match current configuration, flushing directory: {Path}", userPath);
                 FlushDirectory(userPath);
                 existingDirs = Array.Empty<string>();
             }
@@ -762,8 +774,7 @@ public class VirtualLibraryManager
         var seasonFileName = $"S{seasonNumber:D2}E01 - Download Season {seasonNumber}{StubFileExtension}";
         var stubFile = Path.Combine(showFolder, seasonFileName);
 
-        var content = GetStubFileContent("show");
-        File.WriteAllText(stubFile, content);
+        WriteStubFile(stubFile);
     }
 
     private void CreateRegularShowStubs(string showFolder, ContentItem item, Guid userId)
@@ -805,8 +816,7 @@ public class VirtualLibraryManager
 
         if (!File.Exists(stubFile))
         {
-            var content = GetStubFileContent("show");
-            File.WriteAllText(stubFile, content);
+            WriteStubFile(stubFile);
         }
     }
 
@@ -828,7 +838,11 @@ public class VirtualLibraryManager
         }
     }
 
-    private string GetStubFileContent(string placeholderType)
+    /// <summary>
+    /// Gets the dummy video every stub stands in for, honouring the short/long setting.
+    /// </summary>
+    /// <returns>The dummy video path, or null when neither dummy could be extracted.</returns>
+    private string? GetStubTargetPath()
     {
         var config = Plugin.Instance?.Configuration;
         var useShortDummy = config?.UseShortDummyVideo ?? true;
@@ -844,7 +858,55 @@ public class VirtualLibraryManager
             return _dummyVideoPath;
         }
 
-        return $"http://jellynext-placeholder/{placeholderType}";
+        return null;
+    }
+
+    /// <summary>
+    /// Writes a stub file standing in for the dummy video, replacing any file already at that path.
+    /// </summary>
+    /// <remarks>
+    /// A symlink is preferred so a library of several hundred stubs costs nothing on disk - with the
+    /// 1-hour dummy, copies would run to a gigabyte. Jellyfin resolves symlinks itself
+    /// (<c>BaseItem.GetVersionInfo</c> calls <c>ResolveLinkTarget</c> before handing the path to FFmpeg)
+    /// while <c>BaseItem.Path</c> stays the virtual path, which is what PlaybackInterceptor reads.
+    /// Windows refuses symlink creation without elevation or Developer Mode, so a copy is the fallback;
+    /// the failure is latched because it is a property of the host, not of one file.
+    /// </remarks>
+    /// <param name="stubPath">The stub file to write.</param>
+    private void WriteStubFile(string stubPath)
+    {
+        var target = GetStubTargetPath();
+        if (target == null)
+        {
+            if (!_loggedMissingDummy)
+            {
+                _loggedMissingDummy = true;
+                _logger.LogError("No dummy video available - stub files cannot be created");
+            }
+
+            return;
+        }
+
+        // Deletes the link itself rather than its target, and is a no-op when nothing is there.
+        // Needed because CreateSymbolicLink refuses an occupied path, and because a symlink whose
+        // target went missing reads as absent to File.Exists but still occupies the path.
+        File.Delete(stubPath);
+
+        if (!_symlinksUnsupported)
+        {
+            try
+            {
+                File.CreateSymbolicLink(stubPath, target);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+            {
+                _symlinksUnsupported = true;
+                _logger.LogWarning(ex, "Cannot create symlinks here - falling back to copying the dummy video for every stub");
+            }
+        }
+
+        File.Copy(target, stubPath, overwrite: true);
     }
 
     /// <summary>
@@ -961,27 +1023,37 @@ public class VirtualLibraryManager
     }
 
     /// <summary>
-    /// Checks if stub file content matches the current configuration.
+    /// Checks whether an existing stub file still stands in for the configured dummy video.
     /// </summary>
     /// <param name="stubFilePath">Path to a stub file to check.</param>
-    /// <returns>True if the content matches current configuration, false otherwise.</returns>
-    private bool DoesStubContentMatch(string stubFilePath)
+    /// <returns>True if the stub matches the current configuration, false otherwise.</returns>
+    private bool DoesStubMatchConfiguration(string stubFilePath)
     {
         try
         {
+            var target = GetStubTargetPath();
+            if (target == null)
+            {
+                return true; // Nothing better to rebuild with
+            }
+
+            // False also covers a symlink whose target has gone missing, which File.Exists reports as absent
             if (!File.Exists(stubFilePath))
             {
                 return false;
             }
 
-            var currentContent = File.ReadAllText(stubFilePath).Trim();
-            var expectedContent = GetStubFileContent("check");
+            // Size rather than path, so a symlink and a copy answer the same way and a path that
+            // normalizes differently cannot flush the whole library on every single sync. The two
+            // dummies differ by three orders of magnitude, so size tells them apart unambiguously.
+            var linkTarget = File.ResolveLinkTarget(stubFilePath, returnFinalTarget: true) as FileInfo;
+            var stubLength = linkTarget?.Length ?? new FileInfo(stubFilePath).Length;
 
-            return currentContent == expectedContent;
+            return stubLength == new FileInfo(target).Length;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error checking stub file content: {Path}", stubFilePath);
+            _logger.LogWarning(ex, "Error checking stub file: {Path}", stubFilePath);
             return true; // Assume match on error to avoid unnecessary rebuilds
         }
     }
