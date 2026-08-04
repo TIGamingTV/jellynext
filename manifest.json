@@ -9,6 +9,16 @@
     "imageUrl": "https://raw.githubusercontent.com/TIGamingTV/jellynext/main/images/jellynext_logo.png",
     "versions": [
       {
+        "version": "1.9.11.0",
+        "changelog": "### Bug Fixes\n\n- **Playing anything in a virtual library failed with an FFmpeg error on Jellyfin 10.11.7 and later**\n  - Virtual items were `.strm` files holding the path of the plugin's dummy video. Jellyfin 10.11.7 hardened its `.strm` parser as part of [GHSA-j2hf-x4q5-47j3](https://github.com/jellyfin/jellyfin/security/advisories/GHSA-j2hf-x4q5-47j3) and now accepts only remote URLs, silently discarding a local path — so the `.strm` text file itself was handed to FFmpeg, which exited with code 183 and showed the client a fatal playback error\n  - Stub files are now real video files rather than pointers, so nothing has to be resolved out of them. They are symlinks to the dummy video where the operating system allows it, which costs no disk space; on Windows without Developer Mode or elevation, where symlinks are refused, the dummy video is copied instead\n  - The download itself was always triggered — the error appeared after the request was already queued — so this fixes the error message and the playback, not the requesting\n  - Existing `.strm` stubs are removed automatically on upgrade and rebuilt in the new form on the next sync. No configuration changes are needed",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/jellynext/releases/download/v1.9.11.0/jellynext-v1.9.11.0.zip",
+        "checksum": "52118d956b6cc45791e9581df12ff00a",
+        "timestamp": "2026-08-04T20:38:51Z",
+        "repositoryName": "JellyNext",
+        "repositoryUrl": "https://github.com/TIGamingTV/jellynext"
+      },
+      {
         "version": "1.9.10.0",
         "changelog": "### Bug Fixes\n\n- **\"Ignore Collected Items\" let through movies and shows that were already collected**\n  - Trakt's own `ignore_collected=true` filter, which the setting has always relied on, regularly returns titles that are in the user's collection anyway. The recommendation is then offered for download, which is exactly what the setting exists to prevent\n  - Recommendations are now checked a second time against the user's actual Trakt collection, fetched separately, and against this Jellyfin library — a title already on the server is never worth suggesting, whether or not Trakt knows it is collected. Both checks are part of \"Ignore Collected Items\" and turn off with it\n  - The recommendation limits keep meaning what they say: when the filter is on, more suggestions are fetched than needed so dropping the collected ones still leaves a full library rather than a nearly empty one\n  - Trending Movies gets the same treatment. It is a global library fetched with one account's credentials, so it follows that user's \"Ignore Collected Items\" setting\n  - If the collection cannot be read, the content is left unfiltered for that cycle rather than treated as an empty collection\n\n### Improvements\n\n- **Changing a user's recommendation filters now queues a content sync immediately**, as changing the Next Seasons filter already did. The libraries are built from cached content, so a newly enabled filter previously took up to six hours to visibly do anything",
         "targetAbi": "10.11.0.0",
