@@ -55,12 +55,12 @@ Jellyfin.Plugin.JellyNext/
 
 ### Key Components
 - **Content Providers** (`IContentProvider`): Modular sources (RecommendationsProvider, NextSeasonsProvider, TrendingMoviesProvider)
-- **Virtual Libraries**: Per-user .strm stub files (`jellynext-virtual/[userId]/[content-type]/`) + global content (`jellynext-virtual/global/[content-type]/`)
+- **Virtual Libraries**: Per-user stub video files (`jellynext-virtual/[userId]/[content-type]/`) + global content (`jellynext-virtual/global/[content-type]/`)
 - **Download Providers** (`IDownloadProvider`): Pluggable download backends (NativeDownloadProvider for direct Radarr/Sonarr, JellyseerrDownloadProvider for Jellyseerr API, WebhookDownloadProvider for custom HTTP webhooks)
 - **Playback Interception**: Detects virtual item playback, triggers downloads via selected provider
 - **Watchlist Sync**: Automatically adds watchlisted movies/shows from Trakt to download systems (Radarr/Sonarr/Jellyseerr)
 - **OAuth**: Per-user Trakt tokens with auto-refresh (stored in `PluginConfiguration.TraktUsers[]`)
-- **Sync System**: `ContentSyncScheduledTask` + `WatchlistSyncScheduledTask` + `StartupSyncService` → cache → .strm files → library scan
+- **Sync System**: `ContentSyncScheduledTask` + `WatchlistSyncScheduledTask` + `StartupSyncService` → cache → stub files → library scan
 
 ### Architectural Layers
 ```
@@ -153,7 +153,7 @@ StartupSyncService (5s delay) → ITaskManager.QueueScheduledTask<ContentSyncSch
         → TraktApi (fetch recommendations/next seasons)
         → LocalLibraryService (check existing library)
       ContentCacheService.CacheContent()
-    → VirtualLibraryManager.RefreshVirtualLibrary() (create .strm stubs)
+    → VirtualLibraryManager.RefreshVirtualLibrary() (create stub files)
     → ILibraryManager.ValidateMediaLibrary() (trigger Jellyfin scan)
 ```
 
@@ -390,12 +390,17 @@ Implement `IContentProvider` + register in `PluginServiceRegistrator` → automa
   - Global: `jellynext-virtual/global/[content-type]/`
 - **Empty dirs**: Maintain `.keep` files (Jellyfin won't scan empty directories)
 - **File formats**:
-  - Movies: `Title (Year) [tmdbid-ID].strm`
-  - Shows: `Title (Year) [tvdbid-ID]/S##E01 - Download Season #.strm` (seasons 1-10, or single stub for Next Seasons)
+  - Movies: `Title (Year) [tmdbid-ID].mp4`
+  - Shows: `Title (Year) [tvdbid-ID]/S##E01 - Download Season #.mp4` (seasons 1-10, or single stub for Next Seasons)
 - **Regex patterns** (used by PlaybackInterceptor):
   - Path: `jellynext-virtual[/\\]([a-f0-9-]+)[/\\]([^/\\]+)[/\\]` (userId + content type)
   - Movie: `\[tmdbid-(\d+)\]$` | Show: `\[tvdbid-(\d+)\]$`
 - **Native Resolution**: Jellyfin's default resolvers handle stub files automatically via standard naming conventions (`[tmdbid-X]` / `[tvdbid-X]` tags), no custom resolver needed
+- **Stubs are real video files, not `.strm` pointers** ([#21](https://github.com/TIGamingTV/jellynext/issues/21)): Jellyfin 10.11.7 hardened its `.strm` parser as part of [GHSA-j2hf-x4q5-47j3](https://github.com/jellyfin/jellyfin/security/advisories/GHSA-j2hf-x4q5-47j3). `ProbeProvider.FetchShortcutInfo` now only accepts an absolute http/https/rtsp/rtp URL and *silently discards* anything else, and `BaseItem.GetVersionInfo` refuses a `ShortcutPath` whose protocol is `File`. A local path therefore leaves `ShortcutPath` empty and the `.strm` text file itself reaches FFmpeg, which exits 183. Do not reintroduce a local path in a `.strm`
+  - **Pointing a `.strm` at the plugin's own HTTP endpoint would not work either**: a remote shortcut is handed to the *client* to play, so a `127.0.0.1` or LAN URL fails for everyone not on the server
+  - **Symlink first, copy as fallback** (`WriteStubFile`): several hundred stubs of the 1-hour dummy would be a gigabyte of copies. Jellyfin resolves symlinks itself (`BaseItem.GetVersionInfo` → `ResolveLinkTarget`) while `BaseItem.Path` stays the virtual path, which is what `PlaybackInterceptor` reads. Windows refuses symlink creation without elevation or Developer Mode, so the failure is caught, latched (it is a property of the host, not of one file) and the dummy is copied instead
+  - **`DoesStubMatchConfiguration` compares file *size*, not the link target's path**: it has to answer identically for a symlink and for a copy, and a path that normalizes differently would flush and rebuild every library on every sync. The two dummies differ by three orders of magnitude, so size separates them unambiguously
+  - **`RemoveLegacyStubFiles` runs on every `Initialize()`**, deleting `.strm` files anywhere under the virtual library. Without it an upgraded install carries both the old broken stub and the new one in every folder
 
 ### Global Content Types
 - **Purpose**: Shared content across all users (e.g., trending movies)
@@ -405,7 +410,7 @@ Implement `IContentProvider` + register in `PluginServiceRegistrator` → automa
 - **Auto-initialization**: Directory created on plugin startup if enabled (`InitializeGlobalDirectories()`)
 
 ### FFprobe Compatibility (iOS/tvOS Fix)
-- **Problem**: iOS/tvOS probe .strm files with FFprobe → crash on invalid/empty files
+- **Problem**: iOS/tvOS probe stub files with FFprobe → crash on invalid/empty files
 - **Solution**: Two embedded dummy videos:
   - `dummy_short.mp4` (2x2, 2sec, ~5KB) - auto-stops playback on clients without API stop support
   - `dummy.mp4` (2x2, 1hr, ~2MB) - prevents "watched" status (needs 5% = 3min), requires manual stop
