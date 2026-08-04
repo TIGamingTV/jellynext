@@ -887,9 +887,8 @@ public class VirtualLibraryManager
             return;
         }
 
-        // Deletes the link itself rather than its target, and is a no-op when nothing is there.
-        // Needed because CreateSymbolicLink refuses an occupied path, and because a symlink whose
-        // target went missing reads as absent to File.Exists but still occupies the path.
+        // CreateSymbolicLink refuses an occupied path. Delete is a no-op when nothing is there, and
+        // removes the link itself rather than following it to the shared dummy video.
         File.Delete(stubPath);
 
         if (!_symlinksUnsupported)
@@ -1037,19 +1036,25 @@ public class VirtualLibraryManager
                 return true; // Nothing better to rebuild with
             }
 
-            // False also covers a symlink whose target has gone missing, which File.Exists reports as absent
+            // Guards ResolveLinkTarget, which throws rather than answering null on a missing path
             if (!File.Exists(stubFilePath))
             {
                 return false;
             }
 
-            // Size rather than path, so a symlink and a copy answer the same way and a path that
-            // normalizes differently cannot flush the whole library on every single sync. The two
+            var expectedLength = new FileInfo(target).Length;
+
+            // Size rather than the link's target path, so a symlink and a copy answer the same way and a
+            // path that normalizes differently cannot flush every library on every single sync. The two
             // dummies differ by three orders of magnitude, so size tells them apart unambiguously.
             var linkTarget = File.ResolveLinkTarget(stubFilePath, returnFinalTarget: true) as FileInfo;
-            var stubLength = linkTarget?.Length ?? new FileInfo(stubFilePath).Length;
+            if (linkTarget != null)
+            {
+                // A link the dummy has gone out from under needs rebuilding, not measuring
+                return linkTarget.Exists && linkTarget.Length == expectedLength;
+            }
 
-            return stubLength == new FileInfo(target).Length;
+            return new FileInfo(stubFilePath).Length == expectedLength;
         }
         catch (Exception ex)
         {
