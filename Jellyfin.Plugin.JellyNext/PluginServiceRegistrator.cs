@@ -20,6 +20,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddHttpClient();
         serviceCollection.AddSingleton<TraktPluginBridge>();
         serviceCollection.AddSingleton<TraktApi>();
+        serviceCollection.AddSingleton<TraktCollectionService>();
         serviceCollection.AddSingleton<ContentCacheService>();
         serviceCollection.AddSingleton<ShowsCacheService>();
         serviceCollection.AddSingleton<RadarrService>();

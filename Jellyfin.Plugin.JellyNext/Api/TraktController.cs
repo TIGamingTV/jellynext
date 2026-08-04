@@ -291,12 +291,14 @@ public class TraktController : ControllerBase
 
         var recentDays = Math.Clamp(settings.NextSeasonsRecentDays, 1, 3650);
 
-        // The Next Seasons library and widget are both built from cached content, so a narrower window
-        // only takes effect on the next sync - up to six hours of a season the user just filtered out
-        // still sitting there, which reads as the setting having done nothing.
-        var nextSeasonsFilterChanged = traktUser.SyncNextSeasons != settings.SyncNextSeasons
+        // Every library here is built from cached content, so a narrowed filter only takes effect on
+        // the next sync - up to six hours of the items the user just filtered out still sitting there,
+        // which reads as the setting having done nothing.
+        var contentFilterChanged = traktUser.SyncNextSeasons != settings.SyncNextSeasons
             || traktUser.NextSeasonsRecentOnly != settings.NextSeasonsRecentOnly
-            || traktUser.NextSeasonsRecentDays != recentDays;
+            || traktUser.NextSeasonsRecentDays != recentDays
+            || traktUser.IgnoreCollected != settings.IgnoreCollected
+            || traktUser.IgnoreWatchlisted != settings.IgnoreWatchlisted;
 
         traktUser.SyncMovieRecommendations = settings.SyncMovieRecommendations;
         traktUser.SyncShowRecommendations = settings.SyncShowRecommendations;
@@ -317,10 +319,10 @@ public class TraktController : ControllerBase
 
         _logger.LogInformation("Updated Trakt settings for user {UserGuid}", userGuid);
 
-        if (nextSeasonsFilterChanged)
+        if (contentFilterChanged)
         {
             _logger.LogInformation(
-                "Next Seasons filter changed for user {UserGuid}, queueing a content sync",
+                "Content filters changed for user {UserGuid}, queueing a content sync",
                 userGuid);
             _taskManager.QueueScheduledTask<ContentSyncScheduledTask>();
         }
