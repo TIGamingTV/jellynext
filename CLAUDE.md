@@ -97,6 +97,7 @@ Plugin Entry → API Controllers → Services → Providers → Virtual Library 
 **Services** (`/Services/`):
 - `TraktApi.cs`: Trakt API client (OAuth, recommendations, trending, watchlist, watched shows, seasons, watch history with auto-pagination). `CreateTraktClient()` is the single choke point for every authenticated call - mode-aware client id and token resolution live there.
 - `TraktPluginBridge.cs`: Reflection bridge to the official Jellyfin Trakt plugin's stored per-user tokens (see "Shared Trakt Connection" below)
+- `TraktCollectionService.cs`: Per-user, per-kind cached `/sync/collection/*` id sets, used to filter out items the user already has
 - `ContentCacheService.cs`: In-memory cache for content items (per-user, per-provider, 6hr expiration)
 - `ShowsCacheService.cs`: **Global season-level cache** + **per-user watch progress tracking**. Supports full sync (first run via `/sync/watched/shows`) and incremental sync (subsequent runs via `/sync/history/shows` with timestamps). Automatically handles ended vs ongoing shows, caching all seasons for ended shows and only complete seasons for ongoing shows. Tracks last sync timestamp in-memory for efficient delta syncing.
 - `ContentSyncService.cs`: Sync orchestrator (iterates users/providers, updates cache/virtual library)
@@ -117,9 +118,9 @@ Plugin Entry → API Controllers → Services → Providers → Virtual Library 
 
 **Providers** (`/Providers/`):
 - `IContentProvider.cs`: Interface (ProviderName, LibraryName, FetchContentAsync, IsEnabledForUser)
-- `RecommendationsProvider.cs`: Fetches Trakt recommendations, uses ShowsCacheService for season counts to avoid duplicate API calls
+- `RecommendationsProvider.cs`: Fetches Trakt recommendations, uses ShowsCacheService for season counts to avoid duplicate API calls, drops items the user already has (see "Collected Items Are Filtered Locally" below)
 - `NextSeasonsProvider.cs`: Triggers ShowsCacheService sync, reads watched progress + season data from cache (no duplicate API calls). Dynamically fetches next season from Trakt if not in cache for ongoing shows.
-- `TrendingMoviesProvider.cs`: Fetches Trakt trending movies (global, not per-user)
+- `TrendingMoviesProvider.cs`: Fetches Trakt trending movies (global, not per-user), filtered by the source user's collection and the local library
 
 **Virtual Library** (`/VirtualLibrary/`):
 - `VirtualLibraryManager.cs`: Stub file creation/management, dummy.mp4 extraction, .keep file maintenance, global content support
@@ -273,6 +274,15 @@ Implement `IContentProvider` + register in `PluginServiceRegistrator` → automa
   - **Jellyseerr**: Uses `JellyseerrSonarrAnimeProfileId` if configured, otherwise falls back to regular profile
 - **"Next Up" prevention**: Clear playback state in `PlaybackStopped` event (not `PlaybackStart`)
 
+### Collected Items Are Filtered Locally
+- **Trakt's `ignore_collected=true` cannot be trusted.** It is still sent, but it regularly returns titles that are in the user's collection ([#20](https://github.com/TIGamingTV/jellynext/issues/20)). Since the offer here is "play this to download it", a collected title getting through is the whole failure, so `RecommendationsProvider` and `TrendingMoviesProvider` compare the results against the collection themselves
+- **Two checks, both under `IgnoreCollected`**: the user's Trakt collection (`TraktCollectionService`) and the Jellyfin library (`LocalLibraryService`). The library check is the one that matters most - it is the thing the stub would download into - and it also covers a user whose Trakt collection is not kept in sync. Both switch off with the setting, so turning the filter off still means "show me everything"
+- **A show counts as collected if any of it is**, matching what Trakt's own filter is documented to do. Continuing a partly-owned show is the Next Seasons library's job; recommending it again would create stubs for seasons the user already has
+- **Ids are compared through `TraktIdSet`, on Trakt/TMDB/TVDB/IMDB**, because the two sides are separate Trakt payloads. Matching on the Trakt id alone would be enough in the ordinary case; the rest costs nothing and covers merged entries
+- **A failed collection read answers null, not an empty set**, and the caller then leaves the content unfiltered for that cycle. An empty set means "nothing to filter", which is right for a user with no collection and wrong for a user Trakt just failed to answer for. A 401 is different again: `TraktAuthenticationException` propagates and the sync cycle is skipped with the cache intact
+- **The recommendation limit is applied after filtering, not before**: the request over-fetches to Trakt's maximum of 100 whenever the filter is on, then takes the configured number of survivors. Without this a user whose top recommendations are all things they own ends up with an almost empty library, which is the same symptom as the bug. The filter is checked *before* the per-show season lookup, so over-fetching does not multiply Trakt requests
+- **`TraktCollectionService` caches per user and per kind for 30 minutes**, so movies and shows are only fetched when something actually consults them, and one sync run costs one request per list. Failures are not cached
+
 ### Next Seasons Discovery
 - Only suggests **immediate next season** (not all missing seasons)
 - Filters: aired episodes > 0, not in local library (matched on TVDB, TMDB or IMDB id)
@@ -282,7 +292,7 @@ Implement `IContentProvider` + register in `PluginServiceRegistrator` → automa
 - **Dynamic fetching**: If next season not in cache for ongoing shows, fetches latest from Trakt API via `GetShowSeasons()` and checks season count
 - **Library deduplication**: `LocalLibraryService.FindSeriesByAnyProviderId` excludes shows already in Jellyfin. Matching on TVDB alone silently failed for shows Jellyfin identified through TMDB - anime is the common case - so seasons the user already had were suggested again. Trakt always supplies a TVDB id; the *library* item is the side that may not carry one
 - **New-release filter** (opt-in, per user: `NextSeasonsRecentOnly` + `NextSeasonsRecentDays`, default off/90 days): without it the library answers "what haven't I finished" - the next season of a show that ended a decade ago ranks equal to one that premiered last week. With it, a season qualifies if it was *released* inside the window. A season with no `FirstAired` is excluded - the filter is meant to exclude by default. Filtering happens at read time in `NextSeasonsProvider`, never in `ShowsCacheService`, since the season cache is global and the setting is per user
-- **Changing the filter queues a content sync** (`TraktController.UpdateUserSettings` → `ITaskManager.QueueScheduledTask<ContentSyncScheduledTask>`, only when `SyncNextSeasons`/`NextSeasonsRecentOnly`/`NextSeasonsRecentDays` actually changed): the library and the widget are both built from cached content, so without it a narrowed window leaves the excluded season sitting there for up to six hours and reads as a setting that does nothing
+- **Changing the filter queues a content sync** (`TraktController.UpdateUserSettings` → `ITaskManager.QueueScheduledTask<ContentSyncScheduledTask>`, only when a filter actually changed - `SyncNextSeasons`/`NextSeasonsRecentOnly`/`NextSeasonsRecentDays`/`IgnoreCollected`/`IgnoreWatchlisted`): the library and the widget are both built from cached content, so without it a narrowed window leaves the excluded season sitting there for up to six hours and reads as a setting that does nothing
 - **The window runs from `FirstAired` and nothing else** (`SeasonReleaseHelper.IsRecentlyReleased`): a season disappears once it is that many days old, full stop. Airing used to extend it - first as an unconditional pass, then measured from an estimated latest episode - and both readings mean a weekly season outlives the window the user set, which is the one thing this setting exists to prevent. `SeasonReleaseHelper.IsAiring` survives only to stamp `ContentItem.SeasonIsAiring` for the widget's "4 of 12 episodes" line; it must not re-enter the filter
 
 ### New Season Email Notifications

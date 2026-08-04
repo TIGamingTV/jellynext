@@ -17,10 +17,17 @@ namespace Jellyfin.Plugin.JellyNext.Providers;
 /// </summary>
 public class RecommendationsProvider : IContentProvider
 {
+    /// <summary>
+    /// The most recommendations Trakt will return in one request.
+    /// </summary>
+    private const int MaxTraktRecommendations = 100;
+
     private readonly ILogger<RecommendationsProvider> _logger;
     private readonly TraktApi _traktApi;
     private readonly ShowsCacheService _showsCache;
     private readonly TraktPluginBridge _traktPluginBridge;
+    private readonly TraktCollectionService _collectionService;
+    private readonly LocalLibraryService _localLibraryService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RecommendationsProvider"/> class.
@@ -29,16 +36,22 @@ public class RecommendationsProvider : IContentProvider
     /// <param name="traktApi">The Trakt API service.</param>
     /// <param name="showsCache">The shows cache service.</param>
     /// <param name="traktPluginBridge">Bridge to the official Trakt plugin's stored tokens.</param>
+    /// <param name="collectionService">The Trakt collection service.</param>
+    /// <param name="localLibraryService">The local library service.</param>
     public RecommendationsProvider(
         ILogger<RecommendationsProvider> logger,
         TraktApi traktApi,
         ShowsCacheService showsCache,
-        TraktPluginBridge traktPluginBridge)
+        TraktPluginBridge traktPluginBridge,
+        TraktCollectionService collectionService,
+        LocalLibraryService localLibraryService)
     {
         _logger = logger;
         _traktApi = traktApi;
         _showsCache = showsCache;
         _traktPluginBridge = traktPluginBridge;
+        _collectionService = collectionService;
+        _localLibraryService = localLibraryService;
     }
 
     /// <inheritdoc />
@@ -107,14 +120,32 @@ public class RecommendationsProvider : IContentProvider
     private async Task FetchMovieRecommendationsAsync(TraktUser traktUser, List<ContentItem> contentItems)
     {
         var limit = Math.Clamp(traktUser.MovieRecommendationsLimit, 1, 100);
+        var collected = traktUser.IgnoreCollected
+            ? await _collectionService.GetCollectedMovieIdsAsync(traktUser)
+            : null;
+
         var movies = await _traktApi.GetMovieRecommendations(
             traktUser,
             traktUser.IgnoreCollected,
             traktUser.IgnoreWatchlisted,
-            limit: limit);
+            limit: GetFetchLimit(traktUser, limit));
+
+        var added = 0;
+        var skipped = 0;
 
         foreach (var movie in movies)
         {
+            if (added >= limit)
+            {
+                break;
+            }
+
+            if (traktUser.IgnoreCollected && IsMovieAlreadyHeld(movie, collected))
+            {
+                skipped++;
+                continue;
+            }
+
             contentItems.Add(new ContentItem
             {
                 Type = ContentType.Movie,
@@ -126,23 +157,122 @@ public class RecommendationsProvider : IContentProvider
                 ProviderName = ProviderName,
                 Genres = movie.Genres
             });
+            added++;
         }
+
+        LogSkipped("movie", skipped, traktUser.LinkedMbUserId);
     }
 
     private async Task FetchShowRecommendationsAsync(TraktUser traktUser, List<ContentItem> contentItems)
     {
         var limit = Math.Clamp(traktUser.ShowRecommendationsLimit, 1, 100);
+        var collected = traktUser.IgnoreCollected
+            ? await _collectionService.GetCollectedShowIdsAsync(traktUser)
+            : null;
+
         var shows = await _traktApi.GetShowRecommendations(
             traktUser,
             traktUser.IgnoreCollected,
             traktUser.IgnoreWatchlisted,
-            limit: limit);
+            limit: GetFetchLimit(traktUser, limit));
+
+        var added = 0;
+        var skipped = 0;
 
         foreach (var show in shows)
         {
+            // Checked before the season lookup below, which costs a Trakt request per show that is
+            // not already in the shows cache.
+            if (added >= limit)
+            {
+                break;
+            }
+
+            if (traktUser.IgnoreCollected && IsShowAlreadyHeld(show, collected))
+            {
+                skipped++;
+                continue;
+            }
+
             var contentItem = await ProcessShowRecommendationAsync(show, traktUser);
             contentItems.Add(contentItem);
+            added++;
         }
+
+        LogSkipped("show", skipped, traktUser.LinkedMbUserId);
+    }
+
+    /// <summary>
+    /// Gets how many recommendations to ask Trakt for.
+    /// </summary>
+    /// <param name="traktUser">The Trakt user configuration.</param>
+    /// <param name="limit">How many recommendations the user wants to end up with.</param>
+    /// <returns>The limit to send to Trakt.</returns>
+    /// <remarks>
+    /// Over-fetching when the collected filter is on keeps the configured limit meaning "this many
+    /// suggestions": without it, a user whose top recommendations are things they already own ends
+    /// up with a nearly empty library, which is the symptom the filter is meant to remove. It costs
+    /// nothing beyond a larger response - the endpoint is a single unpaginated request either way.
+    /// </remarks>
+    private static int GetFetchLimit(TraktUser traktUser, int limit)
+    {
+        return traktUser.IgnoreCollected ? MaxTraktRecommendations : limit;
+    }
+
+    /// <summary>
+    /// Checks whether the user already has a recommended movie.
+    /// </summary>
+    /// <param name="movie">The recommended movie.</param>
+    /// <param name="collected">The user's collected movies, if the collection could be read.</param>
+    /// <returns>True when the movie should not be recommended.</returns>
+    /// <remarks>
+    /// The Jellyfin library is checked as well as the Trakt collection because it is the thing the
+    /// recommendation would offer to download: a title already on the server is never worth
+    /// suggesting, whether or not Trakt knows it is collected.
+    /// </remarks>
+    private bool IsMovieAlreadyHeld(TraktMovie movie, TraktIdSet? collected)
+    {
+        if (collected?.Contains(movie.Ids) == true)
+        {
+            return true;
+        }
+
+        return movie.Ids.Tmdb is > 0 && _localLibraryService.DoesMovieExist(movie.Ids.Tmdb.Value);
+    }
+
+    /// <summary>
+    /// Checks whether the user already has a recommended show.
+    /// </summary>
+    /// <param name="show">The recommended show.</param>
+    /// <param name="collected">The user's collected shows, if the collection could be read.</param>
+    /// <returns>True when the show should not be recommended.</returns>
+    /// <remarks>
+    /// A show counts as held as soon as any of it is collected or in the library. Continuing a show
+    /// the user has already started is what the Next Seasons library is for; recommending it again
+    /// would offer stubs for seasons they own.
+    /// </remarks>
+    private bool IsShowAlreadyHeld(TraktShow show, TraktIdSet? collected)
+    {
+        if (collected?.Contains(show.Ids) == true)
+        {
+            return true;
+        }
+
+        return _localLibraryService.FindSeriesByAnyProviderId(show.Ids.Tvdb, show.Ids.Tmdb, show.Ids.Imdb) != null;
+    }
+
+    private void LogSkipped(string kind, int skipped, Guid userId)
+    {
+        if (skipped == 0)
+        {
+            return;
+        }
+
+        _logger.LogInformation(
+            "Dropped {Count} {Kind} recommendation(s) already collected or in the library for user {UserId}",
+            skipped,
+            kind,
+            userId);
     }
 
     private async Task<ContentItem> ProcessShowRecommendationAsync(TraktShow show, TraktUser traktUser)

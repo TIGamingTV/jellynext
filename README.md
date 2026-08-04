@@ -236,11 +236,11 @@ After authorization, configure what to sync for each user:
 - **Email Address**: Where this user's notifications are sent
 
 **Recommendation Limits:**
-- **Movie Recommendations Limit**: Number of movie recommendations to fetch (1-100, default: 50)
-- **Show Recommendations Limit**: Number of show recommendations to fetch (1-100, default: 50)
+- **Movie Recommendations Limit**: How many movie recommendations to end up with (1-100, default: 50)
+- **Show Recommendations Limit**: How many show recommendations to end up with (1-100, default: 50)
 
 **Filtering Options:**
-- ☑️ **Ignore Collected Items**: Exclude movies/shows already in your Trakt collection (recommended)
+- ☑️ **Ignore Collected Items**: Exclude movies/shows already in your Trakt collection or already in this Jellyfin library (recommended). Trakt's own filter is unreliable and lets collected titles through, so the collection is fetched and compared locally as well
 - ☐ **Ignore Watchlisted Items**: Exclude items on your Trakt watchlist (if you don't want to download them yet)
 
 **Performance Options:**
@@ -775,6 +775,7 @@ Jellyfin.Plugin.JellyNext/
 │   ├── ContentCacheService.cs    # In-memory content cache (6hr expiration)
 │   ├── ShowsCacheService.cs      # Season-level cache for TV shows with incremental sync
 │   ├── LocalLibraryService.cs    # Jellyfin library queries
+│   ├── TraktCollectionService.cs # Cached Trakt collection, for filtering out collected items
 │   ├── EmailService.cs           # SMTP sender
 │   ├── NewSeasonNotificationService.cs  # New season email digests
 │   ├── NextSeasonsWidgetService.cs  # Backs the home screen widget (contents, requests, artwork)

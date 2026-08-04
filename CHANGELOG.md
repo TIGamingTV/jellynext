@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.9.10.0
+
+### Bug Fixes
+
+- **"Ignore Collected Items" let through movies and shows that were already collected**
+  - Trakt's own `ignore_collected=true` filter, which the setting has always relied on, regularly returns titles that are in the user's collection anyway. The recommendation is then offered for download, which is exactly what the setting exists to prevent
+  - Recommendations are now checked a second time against the user's actual Trakt collection, fetched separately, and against this Jellyfin library — a title already on the server is never worth suggesting, whether or not Trakt knows it is collected. Both checks are part of "Ignore Collected Items" and turn off with it
+  - The recommendation limits keep meaning what they say: when the filter is on, more suggestions are fetched than needed so dropping the collected ones still leaves a full library rather than a nearly empty one
+  - Trending Movies gets the same treatment. It is a global library fetched with one account's credentials, so it follows that user's "Ignore Collected Items" setting
+  - If the collection cannot be read, the content is left unfiltered for that cycle rather than treated as an empty collection
+
+### Improvements
+
+- **Changing a user's recommendation filters now queues a content sync immediately**, as changing the Next Seasons filter already did. The libraries are built from cached content, so a newly enabled filter previously took up to six hours to visibly do anything
+
 ## v1.9.9.0
 
 ### Bug Fixes

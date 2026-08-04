@@ -812,6 +812,131 @@ public class TraktApi
     }
 
     /// <summary>
+    /// Gets every movie in the user's Trakt collection.
+    /// </summary>
+    /// <param name="traktUser">The Trakt user configuration.</param>
+    /// <returns>List of collected movies.</returns>
+    /// <remarks>
+    /// Requested without <c>extended</c>: the minimal payload already carries the ids, which is all
+    /// the collection filter compares on, and a collection can run to thousands of entries.
+    /// </remarks>
+    /// <exception cref="HttpRequestException">Thrown when Trakt did not answer successfully.</exception>
+    /// <exception cref="TraktAuthenticationException">Thrown when Trakt rejected the credentials.</exception>
+    public async Task<TraktMovie[]> GetCollectedMovies(TraktUser traktUser)
+    {
+        var items = await GetCollectionPages<TraktCollectionMovieItem>(
+            traktUser,
+            "/sync/collection/movies",
+            "collected movies");
+
+        return items.Select(item => item.Movie).ToArray();
+    }
+
+    /// <summary>
+    /// Gets every show in the user's Trakt collection.
+    /// </summary>
+    /// <param name="traktUser">The Trakt user configuration.</param>
+    /// <returns>List of collected shows.</returns>
+    /// <remarks>
+    /// A show is listed here as soon as a single episode of it is collected, which matches what
+    /// Trakt's own <c>ignore_collected</c> filter is documented to remove from recommendations.
+    /// </remarks>
+    /// <exception cref="HttpRequestException">Thrown when Trakt did not answer successfully.</exception>
+    /// <exception cref="TraktAuthenticationException">Thrown when Trakt rejected the credentials.</exception>
+    public async Task<TraktShow[]> GetCollectedShows(TraktUser traktUser)
+    {
+        var items = await GetCollectionPages<TraktCollectionShowItem>(
+            traktUser,
+            "/sync/collection/shows",
+            "collected shows");
+
+        return items.Select(item => item.Show).ToArray();
+    }
+
+    /// <summary>
+    /// Reads every page of a collection endpoint.
+    /// </summary>
+    /// <typeparam name="T">The collection item type.</typeparam>
+    /// <param name="traktUser">The Trakt user configuration.</param>
+    /// <param name="endpoint">The endpoint path.</param>
+    /// <param name="operation">A description of the call, used in log messages.</param>
+    /// <returns>Every item across all pages.</returns>
+    /// <remarks>
+    /// <para>
+    /// Pagination is optional on the collection endpoints, so asking for a page may be honoured or
+    /// ignored. <c>X-Pagination-Page-Count</c> settles which happened: Trakt sends it whenever it
+    /// paginated, so a response without it is the whole list and the loop stops there. Guessing from
+    /// the item count instead - "a full page means there is another" - would re-request the same
+    /// complete list on an endpoint that ignored the parameters, for as many pages as are allowed.
+    /// </para>
+    /// <para>
+    /// A failed page throws rather than returning what was read so far: a partial collection would
+    /// silently under-filter, which is the bug this exists to fix, and the caller can only tell the
+    /// difference between "nothing collected" and "could not ask" if the failure is raised.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="HttpRequestException">Thrown when Trakt did not answer a page successfully.</exception>
+    /// <exception cref="TraktAuthenticationException">Thrown when Trakt rejected the credentials.</exception>
+    private async Task<List<T>> GetCollectionPages<T>(TraktUser traktUser, string endpoint, string operation)
+    {
+        const int PageSize = 100;
+        const int MaxPages = 100;
+
+        var allItems = new List<T>();
+        var page = 1;
+
+        while (page <= MaxPages)
+        {
+            using var httpClient = await CreateTraktClient(traktUser);
+            var response = await httpClient.GetAsync($"{endpoint}?page={page}&limit={PageSize}");
+
+            if (!response.IsSuccessStatusCode)
+            {
+                ThrowIfUnauthorized(response, operation);
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogError(
+                    "Failed to get {Operation} (page {Page}): Status={Status}, Content={Content}",
+                    operation,
+                    page,
+                    response.StatusCode,
+                    errorContent);
+
+                // Partial results would silently under-filter, so give the caller nothing to work with.
+                throw new HttpRequestException(
+                    $"Trakt returned {response.StatusCode} for {operation}");
+            }
+
+            var items = await response.Content.ReadFromJsonAsync<T[]>(_jsonOptions);
+            if (items == null || items.Length == 0)
+            {
+                break;
+            }
+
+            allItems.AddRange(items);
+
+            var pageCount = TryGetPageCount(response);
+            if (!pageCount.HasValue || page >= pageCount.Value)
+            {
+                break;
+            }
+
+            page++;
+        }
+
+        if (page > MaxPages)
+        {
+            _logger.LogWarning(
+                "Stopped fetching {Operation} for user {UserId} after {MaxPages} pages",
+                operation,
+                traktUser.LinkedMbUserId,
+                MaxPages);
+        }
+
+        return allItems;
+    }
+
+    /// <summary>
     /// Gets the user's show watchlist.
     /// </summary>
     /// <param name="traktUser">The Trakt user configuration.</param>
