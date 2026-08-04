@@ -9,6 +9,16 @@
     "imageUrl": "https://raw.githubusercontent.com/TIGamingTV/jellynext/main/images/jellynext_logo.png",
     "versions": [
       {
+        "version": "2.0.0.0",
+        "changelog": "Release v2.0.0.0",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/jellynext/releases/download/v2.0.0.0/jellynext-v2.0.0.0.zip",
+        "checksum": "e54f25f960139e6f569d3238f111cd58",
+        "timestamp": "2026-08-04T20:40:44Z",
+        "repositoryName": "JellyNext",
+        "repositoryUrl": "https://github.com/TIGamingTV/jellynext"
+      },
+      {
         "version": "1.9.11.0",
         "changelog": "### Bug Fixes\n\n- **Playing anything in a virtual library failed with an FFmpeg error on Jellyfin 10.11.7 and later**\n  - Virtual items were `.strm` files holding the path of the plugin's dummy video. Jellyfin 10.11.7 hardened its `.strm` parser as part of [GHSA-j2hf-x4q5-47j3](https://github.com/jellyfin/jellyfin/security/advisories/GHSA-j2hf-x4q5-47j3) and now accepts only remote URLs, silently discarding a local path — so the `.strm` text file itself was handed to FFmpeg, which exited with code 183 and showed the client a fatal playback error\n  - Stub files are now real video files rather than pointers, so nothing has to be resolved out of them. They are symlinks to the dummy video where the operating system allows it, which costs no disk space; on Windows without Developer Mode or elevation, where symlinks are refused, the dummy video is copied instead\n  - The download itself was always triggered — the error appeared after the request was already queued — so this fixes the error message and the playback, not the requesting\n  - Existing `.strm` stubs are removed automatically on upgrade and rebuilt in the new form on the next sync. No configuration changes are needed",
         "targetAbi": "10.11.0.0",
