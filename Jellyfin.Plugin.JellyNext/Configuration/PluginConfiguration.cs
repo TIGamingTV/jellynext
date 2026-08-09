@@ -344,6 +344,60 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool ModularHomeRequestButtonEnabled { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets a value indicating whether JellyNext writes a tag onto the items its virtual
+    /// libraries produce.
+    /// </summary>
+    /// <remarks>
+    /// The stubs are indistinguishable from real media once Jellyfin has scanned them, which is the
+    /// point on a client that offers no other affordance, and the problem everywhere else: a
+    /// recommendation looks like something the server has. A tag is the one marker Jellyfin itself
+    /// understands - it shows on the item, it can be searched, filtered and collected on, and it is
+    /// what the client script keys the badge and the request icon off. Opt-in because it writes to
+    /// the library database.
+    /// </remarks>
+    public bool MediaTaggingEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets the tag written onto virtual library items.
+    /// </summary>
+    public string MediaTagName { get; set; } = "JellyNext";
+
+    /// <summary>
+    /// Gets or sets the tag JellyNext last wrote onto virtual library items.
+    /// </summary>
+    /// <remarks>
+    /// Not a setting - written by the tagging service so that renaming <see cref="MediaTagName"/>, or
+    /// switching tagging off, can remove the tag that is actually on the items rather than the one
+    /// that is now configured. Without it a rename would leave every item carrying both.
+    /// </remarks>
+    public string LastAppliedMediaTag { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the web client draws a badge over tagged items.
+    /// </summary>
+    public bool MediaBadgeEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the text of that badge. Empty falls back to <see cref="MediaTagName"/>.
+    /// </summary>
+    public string MediaBadgeText { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the web client replaces the play icon on tagged items
+    /// with a download icon.
+    /// </summary>
+    /// <remarks>
+    /// Cosmetic only. Playing the stub is still what sends the request, so the button keeps working
+    /// exactly as before - it just stops promising playback it cannot deliver.
+    /// </remarks>
+    public bool MediaRequestIconEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the label put on the detail page's play button for a tagged item.
+    /// </summary>
+    public string MediaRequestButtonText { get; set; } = "Request";
+
+    /// <summary>
     /// Gets or sets the OAuth application identity JellyNext presents to Trakt.
     /// Defaults to <see cref="TraktAuthMode.Standalone"/> so existing installations keep working.
     /// </summary>

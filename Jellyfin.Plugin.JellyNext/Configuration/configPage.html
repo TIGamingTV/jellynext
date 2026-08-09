@@ -37,6 +37,7 @@
                         <a type="button" class="emby-button" data-index="3" data-role="button">Downloads</a>
                         <a type="button" class="emby-button" data-index="4" data-role="button">Notifications</a>
                         <a type="button" class="emby-button" data-index="5" data-role="button">Widget</a>
+                        <a type="button" class="emby-button" data-index="6" data-role="button">Library</a>
                     </div>
 
                     <!-- Tab Content Containers (will be loaded dynamically) -->
@@ -46,6 +47,7 @@
                     <div class="tabContent" data-index="3" style="display: none;"></div>
                     <div class="tabContent" data-index="4" style="display: none;"></div>
                     <div class="tabContent" data-index="5" style="display: none;"></div>
+                    <div class="tabContent" data-index="6" style="display: none;"></div>
 
                     <!-- Save Button (outside all tabs) -->
                     <div style="margin-top: 2em;">
@@ -169,7 +171,8 @@
                 2: false,
                 3: false,
                 4: false,
-                5: false
+                5: false,
+                6: false
             };
 
             // Map tab index to tab name and file paths
@@ -179,7 +182,8 @@
                 2: { name: 'trending', html: 'tabs/trending.html', js: 'tabs/trending.js' },
                 3: { name: 'downloads', html: 'tabs/downloads.html', js: 'tabs/downloads.js' },
                 4: { name: 'notifications', html: 'tabs/notifications.html', js: 'tabs/notifications.js' },
-                5: { name: 'widget', html: 'tabs/widget.html', js: 'tabs/widget.js' }
+                5: { name: 'widget', html: 'tabs/widget.html', js: 'tabs/widget.js' },
+                6: { name: 'library', html: 'tabs/library.html', js: 'tabs/library.js' }
             };
 
             // Load tab content and script
@@ -239,7 +243,8 @@
                     loadTabContent(2),
                     loadTabContent(3),
                     loadTabContent(4),
-                    loadTabContent(5)
+                    loadTabContent(5),
+                    loadTabContent(6)
                 ]);
             }
 
@@ -282,6 +287,9 @@
                     if (window.loadWidgetSettings) {
                         loadWidgetSettings(pluginConfig);
                     }
+                    if (window.loadLibrarySettings) {
+                        loadLibrarySettings(pluginConfig);
+                    }
 
                     Dashboard.hideLoadingMsg();
                 }).catch(function(error) {
@@ -315,6 +323,9 @@
                     }
                     if (window.saveWidgetSettings) {
                         saveWidgetSettings(config);
+                    }
+                    if (window.saveLibrarySettings) {
+                        saveLibrarySettings(config);
                     }
 
                     // Save plugin configuration

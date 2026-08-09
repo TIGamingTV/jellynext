@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.1.0.0
+
+### Features
+
+- **JellyNext's items can now be tagged, badged and given a download icon** ([#24](https://github.com/TIGamingTV/jellynext/issues/24))
+  - A new **Library** tab writes a real Jellyfin tag (default: `JellyNext`) onto every movie, show, season and episode in the virtual libraries. Being an ordinary tag, it shows on the item in every client, and it can be searched, filtered and collected on
+  - In the web interface, tagged items get a badge in the corner of the poster and beside the title on their page, and their play icon becomes a download icon — the item page's button reads *Request*. The button still plays the placeholder, which is still what sends the request; it just stops promising playback the server cannot deliver
+  - The badge text is configurable and defaults to the tag, so a server can offer "Recommended" or "Request" rather than a plugin's name
+  - Everything here is off by default and each part switches off on its own. The tag is applied as items are scanned in and again after every **Sync Trakt Content** run; turning it off removes it, and renaming it moves it rather than leaving both
+  - The badge and the icon are drawn by the same client script the New Seasons widget uses, so they are web-interface only and need a Ctrl+F5 after being switched on. The tag is not — it is on the item itself
+
 ## v1.9.11.0
 
 ### Bug Fixes
