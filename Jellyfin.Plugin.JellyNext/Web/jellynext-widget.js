@@ -1,10 +1,13 @@
 /*
- * JellyNext - New Seasons home screen widget.
+ * JellyNext - New Seasons home screen widget, and the marking of JellyNext's own library items.
  *
  * Loaded from index.html by the plugin's script injector, so it runs on every page of the web
- * client. It draws one section into the home screen listing the shows the signed in user has a new
- * season of, each with a Request button that goes through whichever download integration the plugin
- * is configured for.
+ * client. It does two independent things, each switched on separately in the plugin's settings:
+ * it draws one section into the home screen listing the shows the signed in user has a new season
+ * of, each with a Request button that goes through whichever download integration the plugin is
+ * configured for; and it marks the items JellyNext's virtual libraries produce - a badge on the
+ * card, a download glyph where the play one would be - so a recommendation does not look like
+ * something the server already holds. The second half is documented where it begins, further down.
  *
  * The web client rebuilds the home screen on every navigation and offers no extension point, so the
  * section is (re)inserted by watching the DOM.
@@ -32,8 +35,13 @@
 
     var ITEMS_ENDPOINT = 'JellyNext/Widget/NextSeasons';
     var REQUEST_ENDPOINT = 'JellyNext/Widget/Request';
+    var MARKER_ENDPOINT = 'JellyNext/Marker';
     var SECTION_CLASS = 'jellynextSection';
     var STYLE_ID = 'jellynextWidgetStyles';
+    var MARKER_STYLE_ID = 'jellynextMarkerStyles';
+    var MARKED_ATTRIBUTE = 'data-jellynext-marked';
+    var ICON_ATTRIBUTE = 'data-jellynext-icon';
+    var TEXT_ATTRIBUTE = 'data-jellynext-text';
     var DATA_TTL_MS = 5 * 60 * 1000;
     var RESCAN_DELAY_MS = 300;
 
@@ -536,11 +544,346 @@
         });
     }
 
-    function scan() {
-        if (!isSignedIn()) {
+    /* ------------------------------------------------------------------------------------------
+     * Marking JellyNext's own library items.
+     *
+     * Once Jellyfin has scanned a stub it looks like any other film or episode, which is deliberate
+     * on a client that offers no other way to ask for a download and misleading everywhere else: the
+     * card promises something the server does not have, and its play button promises playback it
+     * cannot deliver. The server puts a tag on those items; this reads the set of tagged ids once
+     * and, wherever one of them is drawn, adds a badge and swaps the play glyph for a download one.
+     *
+     * The glyph is an inline SVG rather than another Material Icons class because Jellyfin ships a
+     * subsetted icon font: a class for an icon the client never uses renders as an empty box.
+     *
+     * Every change records what it replaced, so an element the client recycles for a different item
+     * can be put back exactly as it was rather than left carrying the previous item's markings.
+     * ---------------------------------------------------------------------------------------- */
+
+    var markerState = {
+        data: null,
+        ids: null,
+        fetchedAt: 0,
+        userId: null,
+        pending: null
+    };
+
+    var DOWNLOAD_ICON = '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">'
+        + '<path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"></path></svg>';
+
+    // Every class Jellyfin's clients use for a play glyph. Missing one costs a swap, never a break.
+    var PLAY_ICON_CLASSES = [
+        'play_arrow',
+        'play_circle',
+        'play_circle_filled',
+        'play_circle_outline',
+        'player_play'
+    ];
+
+    var MARKER_STYLES = [
+        '.jellynextBadgeAnchor { position: relative; }',
+        '.jellynextTagBadge { position: absolute; top: .4em; left: .4em; z-index: 2;',
+        '    max-width: calc(100% - .8em); padding: .15em .5em; border-radius: .25em;',
+        '    background: var(--accent, #00a4dc); color: #fff; font-size: .78em; font-weight: 600;',
+        '    line-height: 1.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;',
+        '    pointer-events: none; }',
+        '.jellynextTagBadge-detail { position: static; display: inline-block; margin-left: .6em;',
+        '    vertical-align: middle; font-size: .5em; }',
+        '.jellynextRequestIcon { display: inline-flex; align-items: center; justify-content: center; }',
+        '.jellynextRequestIcon svg { width: 1em; height: 1em; fill: currentColor; display: block; }'
+    ].join('\n');
+
+    function addMarkerStyles() {
+        if (document.getElementById(MARKER_STYLE_ID)) {
             return;
         }
 
+        var style = document.createElement('style');
+        style.id = MARKER_STYLE_ID;
+        style.textContent = MARKER_STYLES;
+        document.head.appendChild(style);
+    }
+
+    function loadMarkerData() {
+        var userId = ApiClient.getCurrentUserId();
+        if (userId !== markerState.userId) {
+            markerState.userId = userId;
+            markerState.data = null;
+        }
+
+        if (markerState.data && (Date.now() - markerState.fetchedAt) < DATA_TTL_MS) {
+            return Promise.resolve(markerState.data);
+        }
+
+        if (markerState.pending) {
+            return markerState.pending;
+        }
+
+        markerState.pending = apiFetch({
+            type: 'GET',
+            url: ApiClient.getUrl(MARKER_ENDPOINT),
+            headers: { accept: 'application/json' }
+        }).then(function (data) {
+            markerState.pending = null;
+            markerState.data = data;
+            markerState.fetchedAt = Date.now();
+            markerState.ids = Object.create(null);
+
+            var ids = (data && data.itemIds) || [];
+            for (var i = 0; i < ids.length; i++) {
+                markerState.ids[normalizeId(ids[i])] = true;
+            }
+
+            return data;
+        }).catch(function (error) {
+            markerState.pending = null;
+            console.error('[JellyNext] Could not load the marked items', error);
+            return null;
+        });
+
+        return markerState.pending;
+    }
+
+    function badgeLabel(data) {
+        return (data && (data.badgeText || data.tag)) || 'JellyNext';
+    }
+
+    function buildBadge(data, extraClass) {
+        var badge = document.createElement('span');
+        badge.className = 'jellynextTagBadge' + (extraClass ? ' ' + extraClass : '');
+        badge.textContent = badgeLabel(data);
+        return badge;
+    }
+
+    /**
+     * Swaps every play glyph inside the element for a download one, recording the class it took off
+     * so the element can be handed back unchanged.
+     */
+    function replacePlayIcons(element) {
+        var icons = element.querySelectorAll('.material-icons');
+        Array.prototype.forEach.call(icons, function (icon) {
+            if (icon.hasAttribute(ICON_ATTRIBUTE)) {
+                return;
+            }
+
+            for (var i = 0; i < PLAY_ICON_CLASSES.length; i++) {
+                if (!icon.classList.contains(PLAY_ICON_CLASSES[i])) {
+                    continue;
+                }
+
+                icon.setAttribute(ICON_ATTRIBUTE, PLAY_ICON_CLASSES[i]);
+                icon.classList.remove(PLAY_ICON_CLASSES[i]);
+                icon.classList.add('jellynextRequestIcon');
+                icon.innerHTML = DOWNLOAD_ICON;
+                return;
+            }
+        });
+    }
+
+    /**
+     * Relabels the detail page's play button. The button still plays the stub, which is still what
+     * sends the request - this only stops it saying otherwise.
+     */
+    function replaceButtonText(button, text) {
+        if (!text) {
+            return;
+        }
+
+        var labels = button.querySelectorAll('.button-text');
+        Array.prototype.forEach.call(labels, function (label) {
+            if (label.hasAttribute(TEXT_ATTRIBUTE)) {
+                return;
+            }
+
+            label.setAttribute(TEXT_ATTRIBUTE, label.textContent);
+            label.textContent = text;
+        });
+    }
+
+    /**
+     * Whether this element already carries a badge of its own. Deliberately not a descendant search:
+     * the detail page's anchor is its title, but the page also contains cards that were badged in
+     * their own right, and a search would find one of those and conclude the title already had one.
+     */
+    function hasOwnBadge(anchor) {
+        for (var child = anchor.firstElementChild; child; child = child.nextElementSibling) {
+            if (child.classList && child.classList.contains('jellynextTagBadge')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The parts of an element this script is allowed to touch.
+     *
+     * A card is entirely its own item, so the card is the root. A detail page is not: most of what is
+     * on it - "More Like This", the episode list, the cast - is cards for other items, each of which
+     * is marked, or left alone, in its own right. Taking the page as a root would put a download icon
+     * on every one of them.
+     */
+    function markableRoots(element, isDetail) {
+        if (!isDetail) {
+            return [element];
+        }
+
+        var roots = [];
+        var title = element.querySelector('.itemName');
+        if (title) {
+            roots.push(title);
+        }
+
+        Array.prototype.forEach.call(element.querySelectorAll('.btnPlay, .btnResume'), function (button) {
+            roots.push(button);
+        });
+
+        return roots;
+    }
+
+    function decorate(element, data, isDetail) {
+        addMarkerStyles();
+
+        if (data.badge) {
+            var anchor = isDetail
+                ? element.querySelector('.itemName')
+                : (element.querySelector('.cardScalable') || element.querySelector('.cardBox'));
+
+            if (anchor && !hasOwnBadge(anchor)) {
+                if (!isDetail) {
+                    anchor.classList.add('jellynextBadgeAnchor');
+                }
+
+                anchor.appendChild(buildBadge(data, isDetail ? 'jellynextTagBadge-detail' : null));
+            }
+        }
+
+        if (!data.replaceIcon) {
+            return;
+        }
+
+        markableRoots(element, isDetail).forEach(function (root) {
+            replacePlayIcons(root);
+
+            if (isDetail) {
+                replaceButtonText(root, data.requestText);
+            }
+        });
+    }
+
+    /**
+     * Puts an element back the way the client drew it. Reached when a card is recycled for a
+     * different item, when the detail page navigates to something the server does not hold a tag
+     * for, and when the feature is switched off.
+     */
+    function undecorate(element, isDetail) {
+        var badgeRoot = isDetail ? element.querySelector('.itemName') : element;
+        if (badgeRoot) {
+            Array.prototype.forEach.call(
+                badgeRoot.querySelectorAll('.jellynextTagBadge'),
+                function (badge) {
+                    var anchor = badge.parentNode;
+                    badge.remove();
+
+                    if (anchor && anchor.classList && !anchor.querySelector('.jellynextTagBadge')) {
+                        anchor.classList.remove('jellynextBadgeAnchor');
+                    }
+                });
+        }
+
+        markableRoots(element, isDetail).forEach(function (root) {
+            Array.prototype.forEach.call(root.querySelectorAll('[' + ICON_ATTRIBUTE + ']'), function (icon) {
+                icon.textContent = '';
+                icon.classList.remove('jellynextRequestIcon');
+                icon.classList.add(icon.getAttribute(ICON_ATTRIBUTE));
+                icon.removeAttribute(ICON_ATTRIBUTE);
+            });
+
+            Array.prototype.forEach.call(root.querySelectorAll('[' + TEXT_ATTRIBUTE + ']'), function (label) {
+                label.textContent = label.getAttribute(TEXT_ATTRIBUTE);
+                label.removeAttribute(TEXT_ATTRIBUTE);
+            });
+        });
+    }
+
+    function isMarkedItem(id) {
+        return !!(id && markerState.ids && markerState.ids[id]);
+    }
+
+    function markCards(data) {
+        var cards = document.querySelectorAll('.card[data-id]');
+        Array.prototype.forEach.call(cards, function (card) {
+            var id = normalizeId(card.getAttribute('data-id'));
+            var stamped = card.getAttribute(MARKED_ATTRIBUTE);
+
+            if (stamped && stamped !== id) {
+                undecorate(card, false);
+                card.removeAttribute(MARKED_ATTRIBUTE);
+                stamped = null;
+            }
+
+            if (!isMarkedItem(id)) {
+                if (stamped) {
+                    undecorate(card, false);
+                    card.removeAttribute(MARKED_ATTRIBUTE);
+                }
+
+                return;
+            }
+
+            decorate(card, data, false);
+            card.setAttribute(MARKED_ATTRIBUTE, id);
+        });
+    }
+
+    /**
+     * The id of the item the detail page is showing. Read from the address rather than the page,
+     * because the page is one long-lived element the client re-renders in place.
+     */
+    function detailItemId() {
+        var match = /[?&]id=([^&]+)/.exec(window.location.hash || '');
+        return match ? normalizeId(decodeURIComponent(match[1])) : '';
+    }
+
+    function markDetailPage(data) {
+        var pages = document.querySelectorAll('#itemDetailPage, .itemDetailPage');
+        if (!pages.length) {
+            return;
+        }
+
+        var id = detailItemId();
+        var wanted = isMarkedItem(id);
+
+        Array.prototype.forEach.call(pages, function (page) {
+            var stamped = page.getAttribute(MARKED_ATTRIBUTE);
+
+            if (stamped && (!wanted || stamped !== id)) {
+                undecorate(page, true);
+                page.removeAttribute(MARKED_ATTRIBUTE);
+                stamped = null;
+            }
+
+            if (!wanted) {
+                return;
+            }
+
+            decorate(page, data, true);
+            page.setAttribute(MARKED_ATTRIBUTE, id);
+        });
+    }
+
+    function scanMarkers() {
+        loadMarkerData().then(function (data) {
+            if (!data) {
+                return;
+            }
+
+            markCards(data);
+            markDetailPage(data);
+        });
+    }
+
+    function scanWidget() {
         loadData(false).then(function (data) {
             if (!data) {
                 return;
@@ -565,6 +908,26 @@
         });
     }
 
+    // The two halves are independent: either can be switched off on its own, and a failure in one
+    // must not stop the other.
+    function scan() {
+        if (!isSignedIn()) {
+            return;
+        }
+
+        try {
+            scanWidget();
+        } catch (error) {
+            console.error('[JellyNext] Widget failed', error);
+        }
+
+        try {
+            scanMarkers();
+        } catch (error) {
+            console.error('[JellyNext] Marking failed', error);
+        }
+    }
+
     function scheduleScan() {
         if (state.scheduled) {
             return;
@@ -573,11 +936,7 @@
         state.scheduled = true;
         setTimeout(function () {
             state.scheduled = false;
-            try {
-                scan();
-            } catch (error) {
-                console.error('[JellyNext] Widget failed', error);
-            }
+            scan();
         }, RESCAN_DELAY_MS);
     }
 

@@ -99,7 +99,7 @@ public class WebScriptInjector : IHostedService
                 if (enabled)
                 {
                     _logger.LogWarning(
-                        "The New Seasons widget is enabled but the web client's index.html could not be found. "
+                        "JellyNext's client script is needed but the web client's index.html could not be found. "
                         + "This is expected when the server hosts no web content.");
                 }
 
@@ -123,19 +123,19 @@ public class WebScriptInjector : IHostedService
 
             if (enabled)
             {
-                _logger.LogInformation("Added the New Seasons widget script to {IndexFile}", indexFile);
+                _logger.LogInformation("Added JellyNext's client script to {IndexFile}", indexFile);
             }
             else
             {
-                _logger.LogInformation("Removed the New Seasons widget script from {IndexFile}", indexFile);
+                _logger.LogInformation("Removed JellyNext's client script from {IndexFile}", indexFile);
             }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(
                 ex,
-                "Could not update the web client's index.html. The New Seasons widget will not be shown. "
-                + "Jellyfin needs write access to its web directory for this feature.");
+                "Could not update the web client's index.html. JellyNext's client side features will not "
+                + "be shown. Jellyfin needs write access to its web directory for this.");
         }
     }
 
@@ -144,9 +144,10 @@ public class WebScriptInjector : IHostedService
     /// </summary>
     /// <returns>True when the script should be loaded by the web client.</returns>
     /// <remarks>
-    /// The script draws the standalone widget row, but it also decorates the cards Modular Home
-    /// renders for JellyNext's section with a Request button - Modular Home has no server side hook
-    /// for one. Either feature on its own is reason enough to load it.
+    /// The script draws the standalone widget row, decorates the cards Modular Home renders for
+    /// JellyNext's section with a Request button - Modular Home has no server side hook for one - and
+    /// marks tagged items with a badge and a request icon. Any one of those on its own is reason
+    /// enough to load it.
     /// </remarks>
     private static bool IsScriptNeeded()
     {
@@ -156,8 +157,14 @@ public class WebScriptInjector : IHostedService
             return false;
         }
 
+        // Tagging on its own needs no script: the tag is on the item and Jellyfin shows it. Only the
+        // decorations drawn from it do.
+        var marking = configuration.MediaTaggingEnabled
+            && (configuration.MediaBadgeEnabled || configuration.MediaRequestIconEnabled);
+
         return configuration.NextSeasonsWidgetEnabled
-            || (configuration.ModularHomeIntegrationEnabled && configuration.ModularHomeRequestButtonEnabled);
+            || (configuration.ModularHomeIntegrationEnabled && configuration.ModularHomeRequestButtonEnabled)
+            || marking;
     }
 
     /// <summary>

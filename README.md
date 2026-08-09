@@ -125,6 +125,12 @@ Features:
 - **Any Download Integration**: Requests go through whichever backend is configured (Radarr/Sonarr, Jellyseerr or a webhook), attributed to the user who pressed the button
 - **Works With Modular Home**: Optionally registers the row as a proper [Modular Home](https://github.com/IAmParadox27/jellyfin-plugin-home-sections) section, so each user places it themselves — Request button included
 
+### 🏷️ Marking JellyNext's Items
+- **A Real Jellyfin Tag**: Optionally tags every item in the virtual libraries, so you can search, filter and build collections on it — and Jellyfin shows it on the item like any other tag
+- **A Badge on the Card**: In the web interface, a label in the corner of the poster and next to the title says a title is a recommendation rather than something the server holds
+- **Download, Not Play**: The play icon becomes a download icon and the item page's button reads *Request*, so nothing promises playback the server cannot deliver
+- **Entirely Optional**: Off by default, and every part of it switches off on its own
+
 ### 🎨 Native Jellyfin Integration
 - **Standard Metadata**: Uses Jellyfin's built-in TMDB/TVDB metadata providers (no separate API key needed)
 - **Native Resolution**: Virtual libraries use standard file naming conventions (`[tmdbid-X]`, `[tvdbid-X]`)
@@ -468,6 +474,27 @@ warning is written to the log.
 your phone or TV). Native client apps — Android TV, iOS, Roku, Kodi — cannot load plugin scripts, so
 those keep using the virtual library, where playing an item still triggers the request.
 
+### Step 7: Mark JellyNext's Items (Optional)
+
+Go to **Dashboard → Plugins → JellyNext → Library tab**.
+
+1. Tick **Tag JellyNext items** and, if you like, change the **Tag** (default: `JellyNext`)
+2. Optionally change the **Badge Text** — `Recommended` or `Request` reads better to the people using
+   your server than a plugin's name — or turn the badge and the icon replacement off individually
+3. **Save**, then reload the web interface with Ctrl+F5
+
+**What the tag does**: it goes onto every movie, show, season and episode in JellyNext's virtual
+libraries. Jellyfin treats it like any other tag, so it shows on the item, it is searchable and
+filterable, and you can build a collection from it. It is applied as items are scanned in and again
+after every **Sync Trakt Content** run. Turning the setting off takes it back off; renaming it moves
+it, so items never end up carrying both.
+
+**What the badge and the icon do**: they are drawn by the same script the New Seasons widget uses, so
+they only appear in the **web interface** — Jellyfin gives a plugin no way to change how a native
+client app draws a card. Turning either on adds the script tag to `index.html` in exactly the way
+described above. The download icon is cosmetic: the button still plays the placeholder, which is
+still what sends the request.
+
 ## Usage
 
 ### Understanding Virtual Libraries
@@ -581,6 +608,22 @@ New Seasons *as* a Modular Home section:
 
 **Note**: Modular Home itself requires the **File Transformation** and **Plugin Pages** plugins from
 the same author; see its installation guide.
+
+### Telling JellyNext's Items Apart
+
+Once Jellyfin has scanned them, the placeholders JellyNext writes are ordinary library items — which
+is the whole point on a TV or phone app, where playing one is the only way to ask for a download, and
+misleading everywhere else. The **Library** tab has three ways to say so, each optional:
+
+- **The tag** is the durable one. It is a real Jellyfin tag on the item, so it works in every client,
+  in search, in filters and in collections — a smart collection of everything tagged `JellyNext` is a
+  perfectly good "Discover" library. Nothing else on this list works without it.
+- **The badge** puts the tag (or whatever text you prefer) in the corner of the poster and beside the
+  title on the item's page.
+- **The download icon** replaces the play icon on the card and relabels the item page's play button.
+
+The badge and the icon are drawn by the client script, so they are web-interface only. The tag is
+not: it is on the item, and every client shows it.
 
 ### Downloading Content
 
@@ -744,7 +787,8 @@ Jellyfin.Plugin.JellyNext/
 │   ├── SonarrController.cs       # Sonarr connection testing, profiles (native mode)
 │   ├── NotificationsController.cs  # Test email endpoint
 │   ├── WidgetController.cs       # New Seasons widget contents, requests, artwork
-│   ├── ClientScriptController.cs # Serves the widget script to the web client
+│   ├── MarkerController.cs       # Which items are JellyNext's, and how to mark them
+│   ├── ClientScriptController.cs # Serves the client script to the web client
 │   └── JellyNextLibraryController.cs  # Query cached content
 ├── Configuration/                # Plugin settings
 │   ├── PluginConfiguration.cs   # Settings model (persisted)
@@ -766,7 +810,7 @@ Jellyfin.Plugin.JellyNext/
 │   ├── dummy.mp4                 # 1-hour FFprobe-compatible video (prevents "watched")
 │   └── dummy_short.mp4           # 2-second video (auto-stops playback)
 ├── Web/                          # Client side code served to the web interface
-│   └── jellynext-widget.js       # New Seasons home screen widget
+│   └── jellynext-widget.js       # New Seasons home screen widget, and item marking
 ├── ScheduledTasks/               # Background tasks
 │   └── ContentSyncScheduledTask.cs  # Periodic sync (6hr default)
 ├── Services/                     # Business logic
@@ -779,7 +823,8 @@ Jellyfin.Plugin.JellyNext/
 │   ├── EmailService.cs           # SMTP sender
 │   ├── NewSeasonNotificationService.cs  # New season email digests
 │   ├── NextSeasonsWidgetService.cs  # Backs the home screen widget (contents, requests, artwork)
-│   ├── WebScriptInjector.cs      # Adds/removes the widget script tag in the web client
+│   ├── WebScriptInjector.cs      # Adds/removes the client script tag in the web client
+│   ├── VirtualItemTagService.cs  # Tags the virtual library's items, and untags them again
 │   ├── ModularHomeBridge.cs      # Reflection bridge registering a Modular Home section
 │   ├── ModularHomeRegistrationService.cs  # Keeps that section registered
 │   ├── ModularHomeSectionHandler.cs  # Answers Modular Home's request for the section contents
@@ -838,6 +883,11 @@ Jellyfin.Plugin.JellyNext/
    - Reads the cached Next Seasons content, so it never disagrees with the virtual library and costs no API calls
    - Requests go through the same `IDownloadProvider` the playback interceptor uses
    - Delivered by injecting a script tag into the web client's `index.html`, since Jellyfin offers no plugin hook for the interface; the tag is rewritten on start and removed when the feature is switched off
+
+7. **Item Marking**: Saying which items are only a recommendation
+   - A real Jellyfin tag is the marker, so it works in every client, in search, in filters and in collections — nothing about it is plugin-specific
+   - Applied from two directions: an `ILibraryManager.ItemAdded` subscription for new items, and a sweep after each sync and on every configuration save for everything else
+   - The badge and the download icon are drawn by the same client script as the widget, keyed off the set of tagged ids, and are therefore web-interface only
 
 ### Contributing
 
@@ -971,6 +1021,33 @@ Contributions are welcome! Please:
 **"The cards are landscape, not portrait"**
 - Modular Home draws every third-party section as landscape. Change it for this section in Modular
   Home's own settings; JellyNext cannot set it from its side
+
+### Tag, Badge and Icon Issues
+
+**"The tag doesn't appear on the items"**
+- The tag is applied as items are scanned in and again at the end of every **Sync Trakt Content**
+  run. On an existing library, saving the setting starts a pass immediately, but a large virtual
+  library takes a moment — run the task from **Dashboard → Scheduled Tasks** if you want to be sure
+- Items have to have been scanned into a Jellyfin library first. A stub that no library points at is
+  not an item, so there is nothing to tag
+- Look for `Applied the ... tag on N virtual library items` in the Jellyfin log. `N` counts items
+  that actually changed, so a second run reporting nothing means the first one worked
+
+**"The badge or the download icon doesn't appear"**
+- Both need **Tag JellyNext items** on as well — they are drawn from the tag
+- Reload with Ctrl+F5. The script is loaded from `index.html`, which browsers cache aggressively
+- They are web-interface only. Native client apps (Android TV, iOS, Roku, Kodi) cannot load plugin
+  scripts; the tag itself still shows on the item there
+- Check the Jellyfin log for `Could not update the web client's index.html` — Jellyfin needs write
+  access to its web directory to load the script at all
+
+**"An item still says Request after I navigate to a normal film"**
+- Reload the page. The script puts an element back the way the client drew it when the page moves to
+  a different item, but a client that recycles its markup in an unexpected way can outrun it
+
+**"The tag is on items that are no longer JellyNext's"**
+- Save the configuration once. Each pass also looks at everything still carrying the tag and takes it
+  off anything that is no longer under a JellyNext virtual library
 
 ### Download Issues
 

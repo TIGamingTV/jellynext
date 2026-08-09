@@ -33,7 +33,7 @@ Jellyfin plugin integrating Trakt-powered discovery with per-user virtual librar
 ### Directory Structure
 ```
 Jellyfin.Plugin.JellyNext/
-├── Api/                    # REST API Controllers (Trakt, Radarr, Sonarr, Jellyseerr, JellyNextLibrary, Config, Notifications, Widget, ClientScript)
+├── Api/                    # REST API Controllers (Trakt, Radarr, Sonarr, Jellyseerr, JellyNextLibrary, Config, Notifications, Widget, Marker, ClientScript)
 ├── Configuration/          # Plugin settings (PluginConfiguration.cs, configPage.html, tabs/)
 ├── Helpers/                # Utilities (UserHelper.cs, SeasonReleaseHelper.cs)
 ├── Models/                 # Data models organized by service
@@ -91,7 +91,8 @@ Plugin Entry → API Controllers → Services → Providers → Virtual Library 
 - `JellyNextLibraryController.cs`: Query cached content (recommendations, next seasons)
 - `ConfigController.cs`: Serves modular tab HTML/JS from embedded resources (no auth required - page already admin-only)
 - `NotificationsController.cs`: Sends a test email using the *saved* SMTP configuration
-- `WidgetController.cs`: New Seasons widget contents, season requests, card artwork and the Modular Home status readout. The only controller that authorizes ordinary users (`[Authorize]`) and answers per caller - the user comes from `IAuthorizationContext`, never from a route parameter
+- `WidgetController.cs`: New Seasons widget contents, season requests, card artwork and the Modular Home status readout. Authorizes ordinary users (`[Authorize]`) and answers per caller - the user comes from `IAuthorizationContext`, never from a route parameter
+- `MarkerController.cs`: Tells the web client which items are JellyNext's and how to mark them. Per-user in the same way as `WidgetController`
 - `ClientScriptController.cs`: Serves `Web/jellynext-widget.js`. Anonymous by necessity: the tag sits in `index.html` and is fetched before anyone signs in
 
 **Services** (`/Services/`):
@@ -111,7 +112,8 @@ Plugin Entry → API Controllers → Services → Providers → Virtual Library 
 - `ModularHomeBridge.cs`: Reflection bridge registering a New Seasons section with the Modular Home plugin (see "Modular Home Integration" below)
 - `ModularHomeRegistrationService.cs`: IHostedService keeping that registration in place, since Modular Home holds it in memory only
 - `ModularHomeSectionHandler.cs`: Answers Modular Home's request for the section's contents. Constructed *by Modular Home*, by name - its class and method names are part of the wire contract
-- `WebScriptInjector.cs`: IHostedService adding/removing the widget's script tag in the web client's `index.html`
+- `WebScriptInjector.cs`: IHostedService adding/removing the client script's tag in the web client's `index.html`
+- `VirtualItemTagService.cs`: IHostedService writing the configured tag onto the virtual libraries' items and taking it off again (see "Marking JellyNext's Library Items" below)
 - `LocalLibraryService.cs`: Jellyfin library queries (find series by TVDB ID, check movie existence by TMDB ID, exclude virtual items)
 - `PlaybackInterceptor.cs`: IHostedService detecting virtual item playback, uses DownloadProviderFactory to route requests
 - `DownloadProviderFactory.cs`: Factory selecting NativeDownloadProvider, JellyseerrDownloadProvider, or WebhookDownloadProvider based on config
@@ -135,7 +137,7 @@ Plugin Entry → API Controllers → Services → Providers → Virtual Library 
 **Configuration**:
 - `Configuration/PluginConfiguration.cs`: Persisted settings (Radarr/Sonarr config, TraktUsers[], cache expiration). Profile IDs are nullable `int?` to support optional configs.
 - `Configuration/configPage.html`: Main shell (317 lines) with inline shared utilities. Loads tab content via `ConfigController` endpoints.
-- `Configuration/tabs/`: Modular tab files (general.html/js, trakt.html/js, trending.html/js, downloads.html/js, notifications.html/js, widget.html/js) served as embedded resources
+- `Configuration/tabs/`: Modular tab files (general.html/js, trakt.html/js, trending.html/js, downloads.html/js, notifications.html/js, widget.html/js, library.html/js) served as embedded resources
 - `Helpers/UserHelper.cs`: Retrieves per-user Trakt config from PluginConfiguration
 - `Helpers/SeasonReleaseHelper.cs`: The single definition of "this season is a new release", shared by the per-user library filter and new-season notifications
 
@@ -324,6 +326,18 @@ Implement `IContentProvider` + register in `PluginServiceRegistrator` → automa
 - **`GetContentItems` re-applies the library check and the new-release window at read time**, though `NextSeasonsProvider` has already applied both when the content was cached. The cache is only rebuilt on a sync, so without this a season that arrives on the server, or ages out of the user's window, stays on the row for up to six hours - which is indistinguishable from the feature being broken. It is the shared list, so the Modular Home section gets the same treatment for free. The library check runs inside the lazy `Where`/`Take` pipeline, so it costs one query per card actually shown, not per cached season
 - **`ContentItem.SeasonEpisodeCount` / `SeasonAiredEpisodes`**: stamped by `NextSeasonsProvider` for the same reason as `SeasonFirstAired` - the season being offered is often absent from `ShowsCacheService`, since an ongoing show's incomplete season is fetched on demand and deliberately not cached
 - **Widget JSON is pinned to camelCase** with `[JsonPropertyName]`: Jellyfin serializes member names as written, so without it the payload would mix the plugin's PascalCase models with the controller's lowercase anonymous objects
+
+### Marking JellyNext's Library Items (Tag, Badge, Request Icon)
+
+- **A Jellyfin tag, not a plugin-private marker**: the plugin already identifies its own items by the `jellynext-virtual` path substring, which works only server side. A tag is the one marker Jellyfin itself understands - it renders on the item in every client, it is searchable and filterable, and a collection can be built from it - so the durable half of this feature costs nothing client side and works where no script can run. The badge and the icon are strictly decoration on top of it, and both refuse to do anything without the tag
+- **Applied from two directions because neither covers the other**: `ILibraryManager.ItemAdded` catches items as they are created, including by Jellyfin's own library scan which the plugin does not drive; `VirtualItemTagService.ApplyAsync` sweeps after the content sync's library scan and on every `ConfigurationChanged`. Without the sweep, switching the feature on would do nothing to items that already exist, and a narrowed setting would take up to six hours to show
+- **`ItemUpdateType.None`, never `MetadataEdit`**: anything at or above `MetadataDownload` sends the item through Jellyfin's metadata savers and image writer. With the NFO saver on - the default for a library - that drops an `.nfo` beside every stub and pulls artwork onto disk, hundreds of files into a directory the plugin flushes and rebuilds. `LibraryManager.UpdateItemsAsync` calls `SaveItems` whatever reason it is given, so the database row still changes
+- **`LastAppliedMediaTag` is state, not a setting**: renaming the tag or switching tagging off has to remove the tag that is *on the items*, which is not the one now configured. It is persisted rather than held in memory precisely because the gap between the change and the next sweep can include a restart. Written with `SaveConfiguration()` and never `UpdateConfiguration()` - the latter raises `ConfigurationChanged`, which is what invokes the sweep, and a sweep that schedules a sweep is a loop
+- **A sweep enumerates from two sources**: descendants of the virtual library roots (`GetVirtualFolders` → `FindByPath` → `AncestorIds`), which is where the items needing the tag are and avoids walking the whole library; plus everything still carrying a stale tag, which catches items that have *left* those folders and would otherwise keep a tag nothing ever removes. An item that already has the right tags is not written, so a second run costs one query and no writes
+- **`MarkerController` is per-user like `WidgetController`**, caller from `IAuthorizationContext`. It hands the client the whole id set once rather than answering per card, because the alternative is a request per card; the set is capped at 10000 and the ids are `ToString("N")` to match the hyphenless form the card markup carries
+- **The download glyph is an inline SVG, not another Material Icons class**: Jellyfin ships a subsetted icon font, so a class for an icon the client never uses renders as an empty box. The swap is cosmetic in both directions - the button still plays the stub, which `PlaybackInterceptor` still turns into a download
+- **Every client-side change records what it replaced** (`data-jellynext-icon`, `data-jellynext-text`, `data-jellynext-marked` holding the item id): the web client re-renders the one long-lived `#itemDetailPage` element in place and recycles card markup, so without a stamped id and a reversible edit a normal film inherits the previous item's badge and "Request" button
+- **`WebScriptInjector.IsScriptNeeded` gates on the *decorations*, not on tagging**: tagging alone needs no script, since Jellyfin renders the tag itself. Injecting for it would edit `index.html` for a feature that does not use it
 
 ### Modular Home Integration (Home Screen Sections)
 

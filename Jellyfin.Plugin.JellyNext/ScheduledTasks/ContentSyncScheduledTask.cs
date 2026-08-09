@@ -23,6 +23,7 @@ public class ContentSyncScheduledTask : IScheduledTask
     private readonly VirtualLibraryManager _virtualLibraryManager;
     private readonly ILibraryManager _libraryManager;
     private readonly IFileSystem _fileSystem;
+    private readonly VirtualItemTagService _tagService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ContentSyncScheduledTask"/> class.
@@ -32,18 +33,21 @@ public class ContentSyncScheduledTask : IScheduledTask
     /// <param name="virtualLibraryManager">The virtual library manager.</param>
     /// <param name="libraryManager">The library manager.</param>
     /// <param name="fileSystem">The file system.</param>
+    /// <param name="tagService">The virtual item tag service.</param>
     public ContentSyncScheduledTask(
         ILogger<ContentSyncScheduledTask> logger,
         ContentSyncService syncService,
         VirtualLibraryManager virtualLibraryManager,
         ILibraryManager libraryManager,
-        IFileSystem fileSystem)
+        IFileSystem fileSystem,
+        VirtualItemTagService tagService)
     {
         _logger = logger;
         _syncService = syncService;
         _virtualLibraryManager = virtualLibraryManager;
         _libraryManager = libraryManager;
         _fileSystem = fileSystem;
+        _tagService = tagService;
 
         // Initialize virtual library on first construction
         _virtualLibraryManager.Initialize();
@@ -78,6 +82,10 @@ public class ContentSyncScheduledTask : IScheduledTask
 
             // Trigger library scan for all virtual libraries
             await ScanVirtualLibrariesAsync(cancellationToken);
+            progress?.Report(90);
+
+            // After the scan, so the items this cycle created are marked before anybody sees them.
+            await _tagService.ApplyAsync(cancellationToken);
             progress?.Report(100);
 
             _logger.LogInformation("Scheduled content sync completed successfully");

@@ -1,0 +1,85 @@
+<!-- Marking JellyNext's virtual library items -->
+<div class="verticalSection">
+    <h3 class="sectionTitle">Mark JellyNext Items</h3>
+    <div class="fieldDescription" style="margin-bottom: 1em;">
+        Once Jellyfin has scanned them, JellyNext's placeholders look exactly like the media the
+        server really holds — which is the point on a TV or phone app, where playing one is the only
+        way to ask for a download, and misleading everywhere else. These settings put a
+        <strong>tag</strong> on those items and, in the web interface, a badge on their cards and a
+        download icon where the play icon would be.
+    </div>
+
+    <div class="checkboxContainer checkboxContainer-withDescription">
+        <label>
+            <input is="emby-checkbox" type="checkbox" id="MediaTaggingEnabled" />
+            <span>Tag JellyNext items</span>
+        </label>
+        <div class="fieldDescription checkboxFieldDescription">
+            Writes the tag below onto every movie, show, season and episode in JellyNext's virtual
+            libraries. Jellyfin shows tags on the item, and you can search, filter and build
+            collections on them. Applied as items are scanned in and again after each
+            <strong>Sync Trakt Content</strong> run; turning this off takes the tag off again on the
+            next save. Default: disabled.
+        </div>
+    </div>
+
+    <div class="inputContainer">
+        <label class="inputLabel inputLabelUnfocused" for="MediaTagName">Tag:</label>
+        <input is="emby-input" type="text" id="MediaTagName" name="MediaTagName" />
+        <div class="fieldDescription">
+            The tag written onto the items (default: JellyNext). Renaming it moves the tag on the
+            next save — the old one is removed, so items never end up carrying both.
+        </div>
+    </div>
+</div>
+
+<!-- Web interface appearance -->
+<div class="verticalSection">
+    <h3 class="sectionTitle">Web Interface</h3>
+    <div class="fieldDescription" style="margin-bottom: 1em;">
+        These need the tag above, and they only affect the Jellyfin <strong>web interface</strong>:
+        Jellyfin has no supported way for a plugin to change how a native client app draws a card, so
+        enabling either of them adds a script tag to the web client's <code>index.html</code> — the
+        same one the New Seasons widget uses. Reload the page (Ctrl+F5) after changing them.
+    </div>
+
+    <div class="checkboxContainer checkboxContainer-withDescription">
+        <label>
+            <input is="emby-checkbox" type="checkbox" id="MediaBadgeEnabled" />
+            <span>Show a badge on tagged items</span>
+        </label>
+        <div class="fieldDescription checkboxFieldDescription">
+            Draws a small label in the corner of the poster, and next to the title on the item's
+            page. Default: enabled.
+        </div>
+    </div>
+
+    <div class="inputContainer">
+        <label class="inputLabel inputLabelUnfocused" for="MediaBadgeText">Badge Text:</label>
+        <input is="emby-input" type="text" id="MediaBadgeText" name="MediaBadgeText" />
+        <div class="fieldDescription">
+            What the badge says. Leave it empty to use the tag itself. "Recommended" or "Request"
+            read better than a plugin's name to the people using the server.
+        </div>
+    </div>
+
+    <div class="checkboxContainer checkboxContainer-withDescription">
+        <label>
+            <input is="emby-checkbox" type="checkbox" id="MediaRequestIconEnabled" />
+            <span>Replace the play icon with a download icon</span>
+        </label>
+        <div class="fieldDescription checkboxFieldDescription">
+            Purely cosmetic: the button still plays the placeholder, which is still what sends the
+            download request. It just stops promising playback the server cannot deliver.
+            Default: enabled.
+        </div>
+    </div>
+
+    <div class="inputContainer">
+        <label class="inputLabel inputLabelUnfocused" for="MediaRequestButtonText">Button Text:</label>
+        <input is="emby-input" type="text" id="MediaRequestButtonText" name="MediaRequestButtonText" />
+        <div class="fieldDescription">
+            What the item page's play button says for a tagged item (default: Request).
+        </div>
+    </div>
+</div>

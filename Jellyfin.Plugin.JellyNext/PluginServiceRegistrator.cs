@@ -31,6 +31,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<NewSeasonNotificationService>();
         serviceCollection.AddSingleton<NextSeasonsWidgetService>();
         serviceCollection.AddSingleton<ModularHomeBridge>();
+        serviceCollection.AddSingleton<VirtualItemTagService>();
 
         // Download providers
         serviceCollection.AddSingleton<NativeDownloadProvider>();
@@ -55,5 +56,9 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddHostedService<PlaybackInterceptor>();
         serviceCollection.AddHostedService<WebScriptInjector>();
         serviceCollection.AddHostedService<ModularHomeRegistrationService>();
+
+        // Resolved rather than constructed again: the scheduled task and the marker endpoint hold the
+        // same instance, so its sweep lock actually serializes.
+        serviceCollection.AddHostedService(provider => provider.GetRequiredService<VirtualItemTagService>());
     }
 }
