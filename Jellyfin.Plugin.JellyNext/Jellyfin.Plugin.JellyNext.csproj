@@ -1,9 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
-    <AssemblyVersion>2.1.0.0</AssemblyVersion>
-    <FileVersion>2.1.0.0</FileVersion>
+    <!-- Jellyfin 10.11.x runs on .NET 9; Jellyfin 12.x runs on .NET 10. Building both target
+         frameworks from this one project produces a compatible build for each server line from a
+         single source tree - the Jellyfin plugin API is unchanged between the two NuGet package
+         majors below, so no conditional code is needed, only the conditional package references
+         and CI packaging (see build.yml). -->
+    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+    <AssemblyVersion>2.2.0.0</AssemblyVersion>
+    <FileVersion>2.2.0.0</FileVersion>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
@@ -11,9 +16,27 @@
     <CodeAnalysisRuleSet>../jellyfin.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
 
+  <!-- Jellyfin's NuGet package version tracks its server version exactly - a floating "10.11.*"
+       reference once resolved to a patch whose assembly version didn't match a 10.11.0/10.11.1
+       host and threw ReflectionTypeLoadException, so both are pinned to an exact release.
+       Bump JellyfinPackageVersionNet10 to "12.0.0" (dropping the "-rcN") once Jellyfin 12.0.0
+       stable ships, then remove this comment. -->
+  <PropertyGroup>
+    <JellyfinPackageVersionNet9>10.11.0</JellyfinPackageVersionNet9>
+    <JellyfinPackageVersionNet10>12.0.0-rc*</JellyfinPackageVersionNet10>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinPackageVersionNet9)" />
+    <PackageReference Include="Jellyfin.Model" Version="$(JellyfinPackageVersionNet9)" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinPackageVersionNet10)" />
+    <PackageReference Include="Jellyfin.Model" Version="$(JellyfinPackageVersionNet10)" />
+  </ItemGroup>
+
   <ItemGroup>
-    <PackageReference Include="Jellyfin.Controller" Version="10.11.0" />
-    <PackageReference Include="Jellyfin.Model" Version="10.11.0" />
     <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

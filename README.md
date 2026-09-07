@@ -139,8 +139,8 @@ Features:
 ## Installation
 
 ### Prerequisites
-- **Jellyfin 10.11.0 or higher** (required for API compatibility)
-- **.NET 9.0 Runtime** (usually included with Jellyfin)
+- **Jellyfin 10.11.0 or higher** (10.11.x and 12.x are both supported - see [Building from Source](#building-from-source))
+- **.NET 9.0 or .NET 10.0 Runtime** (usually included with Jellyfin - matches your server's line)
 - **Trakt Account** (free at [trakt.tv](https://trakt.tv))
 - **(Optional) Download Integration** - Choose one:
   - **Radarr/Sonarr** for direct integration
@@ -741,11 +741,17 @@ dotnet restore Jellyfin.Plugin.JellyNext/Jellyfin.Plugin.JellyNext.csproj
 # Build the plugin (Debug)
 dotnet build Jellyfin.Plugin.JellyNext/Jellyfin.Plugin.JellyNext.csproj
 
-# Build for release
+# Build for release (builds both net9.0 and net10.0 - see below)
 dotnet build -c Release Jellyfin.Plugin.JellyNext/Jellyfin.Plugin.JellyNext.csproj
 
-# Output will be in: Jellyfin.Plugin.JellyNext/bin/Release/net9.0/
+# Output will be in: Jellyfin.Plugin.JellyNext/bin/Release/net9.0/  (Jellyfin 10.11.x)
+#                 and Jellyfin.Plugin.JellyNext/bin/Release/net10.0/ (Jellyfin 12.x)
 ```
+
+The project is multi-targeted: Jellyfin 10.11.x runs on .NET 9 and Jellyfin 12.x runs on .NET 10,
+so one `dotnet build` produces a compatible DLL for each server line from the same source. Building
+`net10.0` requires the .NET 10 SDK; if it isn't installed, `dotnet build` still succeeds for
+`net9.0` alone via `dotnet build -f net9.0 ...`.
 
 ### Releasing
 
@@ -760,19 +766,29 @@ To cut a release:
    mismatched heading yields a bare "Release v<version>" note.
 3. Merge to `main`.
 
-The workflow then:
+The workflow then, for **each** target framework (net9.0/Jellyfin 10.11 and net10.0/Jellyfin 12):
 
-1. Builds the solution and packages `bin/Release/net9.0` as `jellynext-v<version>.zip`.
-2. Creates the GitHub release tagged `v<version>` with that asset. The version must not already be
-   released — it fails early rather than replacing an existing release's asset, which would
-   invalidate the checksum already advertised to users.
-3. Appends the version to `manifest.json` (newest first) with the asset's download URL and md5, and
-   commits that back to `main`. This is what makes the new version appear in Jellyfin's plugin
-   catalog for anyone who added the repository URL above.
+1. Builds the solution and packages that framework's output as `jellynext-v<version>.zip`
+   (net9.0) or `jellynext-v<version>-jf12.zip` (net10.0), both attached to one GitHub release
+   tagged `v<version>`. The version must not already be released — it fails early rather than
+   replacing an existing release's asset, which would invalidate the checksum already advertised
+   to users.
+2. Appends an entry to `manifest.json` (newest first) with that build's `targetAbi`, download URL
+   and md5, and commits both entries back to `main` in one commit. A Jellyfin server only ever
+   considers entries whose `targetAbi` it meets, so a 10.11 server always resolves to the net9.0
+   build and a 12.x server to the net10.0 build. The net10.0 entry's manifest version is the
+   net9.0 one with its last component incremented by one — Jellyfin's update-selection logic
+   filters by `targetAbi` and then simply picks the highest version number among what's left, with
+   no awareness of `targetAbi` as a tiebreaker, so within a release the newer-ABI build must sort
+   above the older one for a server that can see both.
 
 No tokens or secrets are needed — the built-in `GITHUB_TOKEN` covers all of it. The manifest step
 runs after the release because the checksum has to match the asset that was actually published, and
 it is idempotent, so re-running a release does not duplicate entries.
+
+Until Jellyfin 12.0.0 ships stable, `JellyfinPackageVersionNet10` in the `.csproj` is pinned to the
+latest release candidate (currently `12.0.0-rc7`) so the net10.0 build can be tested. Bump it to the
+final `12.0.0` once that's out.
 
 `manifest.json` ships with an empty `versions` array; it fills in from the first release onward.
 
@@ -911,7 +927,9 @@ Contributions are welcome! Please:
 - **Stub Files**: Real video files (symlinks to the dummy video, copies where symlinks are unavailable) - Jellyfin 10.11.7 stopped resolving local paths inside `.strm` files
 - **Config Validation**: Stub files auto-rebuild when dummy video setting changes
 - **Jellyfin 10.11**: UserDataManager requires `User` entity (not Guid), use `IUserManager.GetUserById()`
-- **Framework**: .NET 9.0 required
+- **Framework**: Multi-targeted `net9.0`/`net10.0` - the Jellyfin plugin API is unchanged between the
+  10.11.x and 12.x NuGet package majors, so this needs conditional package references only, no
+  conditional code
 
 ## Troubleshooting
 
@@ -920,7 +938,7 @@ Contributions are welcome! Please:
 **"Plugin not appearing after restart"**
 - Verify folder name includes version: `JellyNext_v1.0.0` (not just `JellyNext`)
 - Check Jellyfin logs for plugin load errors: **Dashboard → Logs**
-- Ensure .NET 9.0 is installed (included with Jellyfin 10.11+)
+- Ensure the matching .NET runtime is installed (.NET 9.0 for Jellyfin 10.11.x, .NET 10.0 for Jellyfin 12.x - both are included with their respective Jellyfin server)
 
 **"Libraries showing as empty"**
 - Verify you created the Jellyfin libraries pointing to the virtual folders
