@@ -9,6 +9,26 @@
     "imageUrl": "https://raw.githubusercontent.com/TIGamingTV/jellynext/main/images/jellynext_logo.png",
     "versions": [
       {
+        "version": "2.2.0.1",
+        "changelog": "### Features\n\n- **Jellyfin 12.x support, alongside 10.11.x** — Jellyfin 12 runs on .NET 10 rather than .NET 9, which is otherwise the only change that matters here: the plugin API itself is unchanged, so the same source now builds two DLLs (`net9.0` for 10.11.x, `net10.0` for 12.x) rather than forking the codebase\n  - The release workflow packages and publishes both builds from one version bump, and `manifest.json` carries an entry for each `targetAbi` — a 10.11 server and a 12.x server each resolve to the build meant for them\n  - The `net10.0` build currently targets the `Jellyfin.Controller`/`Jellyfin.Model` 12.0.0 release candidate, since 12.0.0 hasn't shipped stable yet; it will be repinned to the final release the same way the plugin has always pinned to an exact Jellyfin version rather than a floating one",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/jellynext/releases/download/v2.2.0.0/jellynext-v2.2.0.0-jf12.zip",
+        "checksum": "ccd50ed6423b72aa8bc2b805a5fd63f3",
+        "timestamp": "2026-09-07T15:01:21Z",
+        "repositoryName": "JellyNext",
+        "repositoryUrl": "https://github.com/TIGamingTV/jellynext"
+      },
+      {
+        "version": "2.2.0.0",
+        "changelog": "### Features\n\n- **Jellyfin 12.x support, alongside 10.11.x** — Jellyfin 12 runs on .NET 10 rather than .NET 9, which is otherwise the only change that matters here: the plugin API itself is unchanged, so the same source now builds two DLLs (`net9.0` for 10.11.x, `net10.0` for 12.x) rather than forking the codebase\n  - The release workflow packages and publishes both builds from one version bump, and `manifest.json` carries an entry for each `targetAbi` — a 10.11 server and a 12.x server each resolve to the build meant for them\n  - The `net10.0` build currently targets the `Jellyfin.Controller`/`Jellyfin.Model` 12.0.0 release candidate, since 12.0.0 hasn't shipped stable yet; it will be repinned to the final release the same way the plugin has always pinned to an exact Jellyfin version rather than a floating one",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/jellynext/releases/download/v2.2.0.0/jellynext-v2.2.0.0.zip",
+        "checksum": "fcfeb8b5567b09459db5c92d2376e90a",
+        "timestamp": "2026-09-07T15:01:21Z",
+        "repositoryName": "JellyNext",
+        "repositoryUrl": "https://github.com/TIGamingTV/jellynext"
+      },
+      {
         "version": "2.1.0.0",
         "changelog": "### Features\n\n- **JellyNext's items can now be tagged, badged and given a download icon** ([#24](https://github.com/TIGamingTV/jellynext/issues/24))\n  - A new **Library** tab writes a real Jellyfin tag (default: `JellyNext`) onto every movie, show, season and episode in the virtual libraries. Being an ordinary tag, it shows on the item in every client, and it can be searched, filtered and collected on\n  - In the web interface, tagged items get a badge in the corner of the poster and beside the title on their page, and their play icon becomes a download icon — the item page's button reads *Request*. The button still plays the placeholder, which is still what sends the request; it just stops promising playback the server cannot deliver\n  - The badge text is configurable and defaults to the tag, so a server can offer \"Recommended\" or \"Request\" rather than a plugin's name\n  - Everything here is off by default and each part switches off on its own. The tag is applied as items are scanned in and again after every **Sync Trakt Content** run; turning it off removes it, and renaming it moves it rather than leaving both\n  - The badge and the icon are drawn by the same client script the New Seasons widget uses, so they are web-interface only and need a Ctrl+F5 after being switched on. The tag is not — it is on the item itself",
         "targetAbi": "10.11.0.0",
