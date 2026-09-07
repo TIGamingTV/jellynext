@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.2.0.0
+
+### Features
+
+- **Jellyfin 12.x support, alongside 10.11.x** — Jellyfin 12 runs on .NET 10 rather than .NET 9, which is otherwise the only change that matters here: the plugin API itself is unchanged, so the same source now builds two DLLs (`net9.0` for 10.11.x, `net10.0` for 12.x) rather than forking the codebase
+  - The release workflow packages and publishes both builds from one version bump, and `manifest.json` carries an entry for each `targetAbi` — a 10.11 server and a 12.x server each resolve to the build meant for them
+  - The `net10.0` build currently targets the `Jellyfin.Controller`/`Jellyfin.Model` 12.0.0 release candidate, since 12.0.0 hasn't shipped stable yet; it will be repinned to the final release the same way the plugin has always pinned to an exact Jellyfin version rather than a floating one
+
 ## v2.1.0.0
 
 ### Features
