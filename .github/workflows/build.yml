@@ -20,14 +20,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Jellyfin 10.11.x runs on .NET 9; Jellyfin 12.x runs on .NET 10. The plugin is multi-targeted
-      # (see the .csproj) so both SDKs need to be present for `dotnet build` to produce both.
+      # Jellyfin 12.x runs on .NET 10 (see the .csproj).
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: |
-            9.0.x
-            10.0.x
+          dotnet-version: 10.0.x
 
       - name: Restore dependencies
         run: dotnet restore Jellyfin.Plugin.JellyNext.sln
@@ -47,18 +44,8 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Plugin version: $VERSION"
 
-          # manifest.json requires a unique numeric version per entry (see update-manifest.sh), and
-          # the net10.0/Jellyfin 12 build shares this project's single <AssemblyVersion>. Give it its
-          # own manifest version by bumping the last component, which also keeps it sorting above the
-          # net9.0 build for a Jellyfin 12 server that can see both entries - Jellyfin's own selection
-          # logic filters by targetAbi and then just picks the highest version number, with no
-          # awareness of targetAbi as a tiebreaker.
-          VERSION_NET10=$(echo "$VERSION" | awk -F. '{print $1"."$2"."$3"."($4+1)}')
-          echo "version_net10=$VERSION_NET10" >> "$GITHUB_OUTPUT"
-          echo "Plugin version (net10.0/Jellyfin 12 build): $VERSION_NET10"
-
       # Drops any prerelease suffix, then pads to the four components Jellyfin compares as a Version.
-      - name: Extract target ABIs
+      - name: Extract target ABI
         id: targetabi
         run: |
           set -euo pipefail
@@ -72,19 +59,15 @@ jobs:
             echo "$abi"
           }
 
-          JELLYFIN_VERSION_NET9=$(grep -oPm1 '(?<=<JellyfinPackageVersionNet9>)[^<]+' Jellyfin.Plugin.JellyNext/Jellyfin.Plugin.JellyNext.csproj)
-          JELLYFIN_VERSION_NET10=$(grep -oPm1 '(?<=<JellyfinPackageVersionNet10>)[^<]+' Jellyfin.Plugin.JellyNext/Jellyfin.Plugin.JellyNext.csproj)
-          if [ -z "$JELLYFIN_VERSION_NET9" ] || [ -z "$JELLYFIN_VERSION_NET10" ]; then
-            echo "::error::Could not read JellyfinPackageVersionNet9/Net10 from Jellyfin.Plugin.JellyNext.csproj"
+          JELLYFIN_VERSION=$(grep -oPm1 '(?<=<JellyfinPackageVersion>)[^<]+' Jellyfin.Plugin.JellyNext/Jellyfin.Plugin.JellyNext.csproj)
+          if [ -z "$JELLYFIN_VERSION" ]; then
+            echo "::error::Could not read JellyfinPackageVersion from Jellyfin.Plugin.JellyNext.csproj"
             exit 1
           fi
 
-          TARGET_ABI_NET9=$(normalize_abi "$JELLYFIN_VERSION_NET9")
-          TARGET_ABI_NET10=$(normalize_abi "$JELLYFIN_VERSION_NET10")
-          echo "targetabi_net9=$TARGET_ABI_NET9" >> "$GITHUB_OUTPUT"
-          echo "targetabi_net10=$TARGET_ABI_NET10" >> "$GITHUB_OUTPUT"
-          echo "Target ABI (net9.0/10.11): $TARGET_ABI_NET9"
-          echo "Target ABI (net10.0/12.x): $TARGET_ABI_NET10"
+          TARGET_ABI=$(normalize_abi "$JELLYFIN_VERSION")
+          echo "targetabi=$TARGET_ABI" >> "$GITHUB_OUTPUT"
+          echo "Target ABI (net10.0/12.x): $TARGET_ABI"
 
       # A published version is immutable: re-releasing the same tag would swap the asset and
       # invalidate the checksum already advertised to users. Fail early instead.
@@ -101,15 +84,12 @@ jobs:
           fi
           echo "$TAG has not been released yet."
 
-      # Two zips, one per target framework / Jellyfin major line. The net9.0 asset keeps its
-      # existing name so nothing about the 10.11 track's history or URLs changes.
       - name: Package plugin
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          (cd Jellyfin.Plugin.JellyNext/bin/Release/net9.0 && zip -r "../../../../jellynext-v${VERSION}.zip" .)
-          (cd Jellyfin.Plugin.JellyNext/bin/Release/net10.0 && zip -r "../../../../jellynext-v${VERSION}-jf12.zip" .)
+          (cd Jellyfin.Plugin.JellyNext/bin/Release/net10.0 && zip -r "../../../../jellynext-v${VERSION}.zip" .)
 
       - name: Calculate checksum
         id: checksum
@@ -118,11 +98,8 @@ jobs:
         run: |
           set -euo pipefail
           CHECKSUM=$(md5sum "jellynext-v${VERSION}.zip" | awk '{print $1}')
-          CHECKSUM_NET10=$(md5sum "jellynext-v${VERSION}-jf12.zip" | awk '{print $1}')
           echo "checksum=$CHECKSUM" >> "$GITHUB_OUTPUT"
-          echo "checksum_net10=$CHECKSUM_NET10" >> "$GITHUB_OUTPUT"
-          echo "Checksum (net9.0/10.11): $CHECKSUM"
-          echo "Checksum (net10.0/12.x): $CHECKSUM_NET10"
+          echo "Checksum: $CHECKSUM"
 
       # Written to a file rather than a step output. Release notes are arbitrary Markdown, and
       # interpolating them into a shell command line would let backticks and $(...) execute.
@@ -147,12 +124,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jellynext-v${{ steps.version.outputs.version }}
-          path: |
-            jellynext-v${{ steps.version.outputs.version }}.zip
-            jellynext-v${{ steps.version.outputs.version }}-jf12.zip
+          path: jellynext-v${{ steps.version.outputs.version }}.zip
 
-      # One release, two assets - the 10.11 and 12.x builds are the same feature set, so they share
-      # a tag and a changelog entry.
       - name: Create Release
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
@@ -160,9 +133,7 @@ jobs:
           tag_name: v${{ steps.version.outputs.version }}
           name: Jellynext ${{ steps.version.outputs.version }}
           body_path: release-notes.md
-          files: |
-            jellynext-v${{ steps.version.outputs.version }}.zip
-            jellynext-v${{ steps.version.outputs.version }}-jf12.zip
+          files: jellynext-v${{ steps.version.outputs.version }}.zip
           draft: false
           prerelease: false
         env:
@@ -171,29 +142,13 @@ jobs:
       # This repository is its own Jellyfin plugin repository: manifest.json is served straight from
       # raw.githubusercontent.com. It can only be written after the release exists, because the
       # checksum has to match the asset that was actually published.
-      #
-      # Run twice, once per build: a Jellyfin server only ever sees entries whose targetAbi it meets,
-      # so a 10.11 server gets the net9.0 build and a 12.x server gets the net10.0 build. Each needs
-      # its own manifest `version` (see the version_net10 comment above) - update-manifest.sh upserts
-      # by version, so these are two independent entries, not one being overwritten by the other.
-      - name: Update plugin manifest (net9.0 / Jellyfin 10.11)
+      - name: Update plugin manifest
         if: github.ref == 'refs/heads/main'
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          TARGET_ABI: ${{ steps.targetabi.outputs.targetabi_net9 }}
+          TARGET_ABI: ${{ steps.targetabi.outputs.targetabi }}
           SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/jellynext-v${{ steps.version.outputs.version }}.zip
           CHECKSUM: ${{ steps.checksum.outputs.checksum }}
-          CHANGELOG_FILE: release-notes.md
-          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
-        run: .github/scripts/update-manifest.sh
-
-      - name: Update plugin manifest (net10.0 / Jellyfin 12)
-        if: github.ref == 'refs/heads/main'
-        env:
-          VERSION: ${{ steps.version.outputs.version_net10 }}
-          TARGET_ABI: ${{ steps.targetabi.outputs.targetabi_net10 }}
-          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/jellynext-v${{ steps.version.outputs.version }}-jf12.zip
-          CHECKSUM: ${{ steps.checksum.outputs.checksum_net10 }}
           CHANGELOG_FILE: release-notes.md
           REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
         run: .github/scripts/update-manifest.sh

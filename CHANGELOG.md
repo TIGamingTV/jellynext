@@ -1,5 +1,38 @@
 # Changelog
 
+## v2.5.0.0
+
+### Changes
+
+- **Jellyfin 10.11.x (the `net9.0` build) is no longer built or published.** JellyNext now targets
+  Jellyfin 12.x exclusively; the plugin repository (`manifest.json`) only ever gains `net10.0`
+  entries from this point on, so a 10.11 server will not see or offer further JellyNext updates
+  through **Dashboard → Plugins → Catalog**
+  - **If you're still on Jellyfin 10.11.x**, you can keep running JellyNext, but updates now require
+    manual installation: download `jellynext-v2.4.0.0.zip` (the last `net9.0` build) from
+    [Releases](../../releases/tag/v2.4.0.0) and follow [Manual Installation](README.md#manual-installation).
+    It will not receive further updates unless you repeat this for each future manual release, or
+    upgrade the server to Jellyfin 12.x and switch to the repository install
+  - The project itself is now single-targeted (`net10.0` only) rather than multi-targeted. The
+    plugin API is unchanged between the two Jellyfin lines, so anyone who wants to keep building a
+    `net9.0` copy from source can still do so by adding a `net9.0` target and the matching
+    `Jellyfin.Controller`/`Jellyfin.Model` 10.11.0 package references back to the `.csproj`
+
+## v2.4.0.0
+
+### Bug Fixes
+
+- **On Jellyfin 12, JellyNext appeared under another plugin's name and description** ([#27](https://github.com/TIGamingTV/jellynext/issues/27))
+  - JellyNext's plugin GUID was identical to that of `jellyfin-plugin-openlibrary`, which ships in the repository every Jellyfin install enables by default. Jellyfin identifies plugins by GUID alone and ignores the name, so the two catalogue entries were merged into one — keeping the name, description, image and changelog of whichever repository was listed first, which is the default one on essentially every server
+  - The settings link kept working because a plugin's configuration page is resolved from the loaded assembly rather than from the catalogue, which is why the card read "OpenLibrary" but opened JellyNext
+  - It only surfaced now, and only on Jellyfin 12, because OpenLibrary was published to the default repository with `targetAbi 12.0.0.0` on 2026-09-08. A 10.11 server never saw the entry, so it never merged
+  - **JellyNext's GUID has changed to `ce392429-21cb-43a1-b02d-be316b54bdf3`.** A GUID is how Jellyfin tracks an installed plugin, so the old installation cannot update into the new one: **uninstall JellyNext and install it again** from the repository. **Your settings are kept** — the configuration file is named after the plugin's assembly, not its GUID, so it survives the reinstall untouched
+  - Every previously released version has been removed from the plugin repository, because each of those packages still contains the colliding GUID and installing one would bring the problem back. Their release notes remain in this changelog and on the releases page
+
+### Improvements
+
+- **JellyNext now supplies its own description to the dashboard** instead of leaving it to the repository. Jellyfin 12 falls back to the catalogue's text when a plugin does not describe itself, which is the mechanism that let another plugin's description appear on JellyNext's card in the first place
+
 ## v2.3.0.0
 
 ### Features
