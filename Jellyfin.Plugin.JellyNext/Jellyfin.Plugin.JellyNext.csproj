@@ -7,8 +7,8 @@
          majors below, so no conditional code is needed, only the conditional package references
          and CI packaging (see build.yml). -->
     <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
-    <AssemblyVersion>2.2.0.0</AssemblyVersion>
-    <FileVersion>2.2.0.0</FileVersion>
+    <AssemblyVersion>2.3.0.0</AssemblyVersion>
+    <FileVersion>2.3.0.0</FileVersion>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
