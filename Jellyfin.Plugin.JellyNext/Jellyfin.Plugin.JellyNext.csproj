@@ -1,14 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- Jellyfin 10.11.x runs on .NET 9; Jellyfin 12.x runs on .NET 10. Building both target
-         frameworks from this one project produces a compatible build for each server line from a
-         single source tree - the Jellyfin plugin API is unchanged between the two NuGet package
-         majors below, so no conditional code is needed, only the conditional package references
-         and CI packaging (see build.yml). -->
-    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
-    <AssemblyVersion>2.3.0.0</AssemblyVersion>
-    <FileVersion>2.3.0.0</FileVersion>
+    <!-- Jellyfin 12.x runs on .NET 10. The plugin previously also targeted net9.0 for Jellyfin
+         10.11.x, but that build is no longer produced going forward - see the v2.5.0.0 CHANGELOG
+         entry. A 10.11 server does not receive further updates through the plugin repository; the
+         last net9.0 build (v2.4.0.0) remains available on the Releases page for manual install. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyVersion>2.5.0.0</AssemblyVersion>
+    <FileVersion>2.5.0.0</FileVersion>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
@@ -16,22 +15,16 @@
     <CodeAnalysisRuleSet>../jellyfin.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
 
-  <!-- Jellyfin's NuGet package version tracks its server version exactly - a floating "10.11.*"
-       reference once resolved to a patch whose assembly version didn't match a 10.11.0/10.11.1
-       host and threw ReflectionTypeLoadException, so both are pinned to an exact release. -->
+  <!-- Jellyfin's NuGet package version tracks its server version exactly - a floating "12.*"
+       reference could resolve to a patch whose assembly version doesn't match the host and throw
+       ReflectionTypeLoadException, so it stays pinned to an exact release. -->
   <PropertyGroup>
-    <JellyfinPackageVersionNet9>10.11.0</JellyfinPackageVersionNet9>
-    <JellyfinPackageVersionNet10>12.0.0</JellyfinPackageVersionNet10>
+    <JellyfinPackageVersion>12.0.0</JellyfinPackageVersion>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
-    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinPackageVersionNet9)" />
-    <PackageReference Include="Jellyfin.Model" Version="$(JellyfinPackageVersionNet9)" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
-    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinPackageVersionNet10)" />
-    <PackageReference Include="Jellyfin.Model" Version="$(JellyfinPackageVersionNet10)" />
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinPackageVersion)" />
+    <PackageReference Include="Jellyfin.Model" Version="$(JellyfinPackageVersion)" />
   </ItemGroup>
 
   <ItemGroup>

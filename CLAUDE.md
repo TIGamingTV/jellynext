@@ -224,6 +224,16 @@ Progress is *set*, not merged with `Math.Max`: the snapshot is authoritative in 
 ### Configuration Access
 Use `Plugin.Instance?.Configuration` not `Plugin.Instance?.PluginConfiguration` - `BasePlugin<T>` exposes as `Configuration`
 
+### Plugin Identity (GUID, Name, Description)
+- **The GUID must be unique across every repository a server has enabled, not just this one.** `InstallationManager.FilterPackages` matches packages on `Id` and never reaches its name comparison when an id is supplied, then `MergeSortedList` folds same-GUID entries into a single `PackageInfo` keeping the *first* repository's `name`/`description`/`overview`/`imageUrl`. The default Jellyfin repository is enabled everywhere and is ordered first, so a collision with anything in it is unwinnable from this side
+- **This has already happened once**: `a4df60c5-6ab4-412a-8f79-2cab93fb2bc5` was shared with `jellyfin-plugin-openlibrary`, published to the default repository with `targetAbi 12.0.0.0` on 2026-09-08. JellyNext's card then showed OpenLibrary's name, description and changelog. Never reuse that GUID, and check any candidate against `repo.jellyfin.org/files/plugin/manifest.json` before adopting it
+- **The symptom is diagnostic, not confusing**: wrong name/description but the *correct* settings page means catalogue-sourced metadata over an assembly-sourced config page. `usePluginDetails.ts` takes name and description from `/Packages` (the merged catalogue) but the settings link from `findBestConfigurationPage`, which is built from the loaded assembly's `IHasWebPages` registration. Anything that makes those two disagree produces it
+- **`PluginManager.PopulateManifest` rewrites every installed plugin's `meta.json` from the catalogue on every dashboard visit**, so an on-disk fix does not survive - the repository entry owns that file, not the shipped zip
+- **`Description` is overridden explicitly in `Plugin.cs`.** `BasePlugin.Description` defaults to `string.Empty`, which is falsy in JS, so `pluginInfo?.Description || packageInfo?.description` silently substitutes the catalogue's text. A plugin that does not describe itself displays whatever the repository says - and shows nothing at all for a manual drop-in install
+- **Changing the GUID does not lose user configuration**: `BasePluginOfT.ConfigurationFileName` is `Path.ChangeExtension(AssemblyFileName, ".xml")`, so settings live in `Jellyfin.Plugin.JellyNext.xml` regardless of the GUID. It *does* require a manual uninstall/reinstall, since Jellyfin tracks the installation by GUID
+- **The GUID appears in three places that must agree**: `Plugin.cs` (`Id`), `Configuration/configPage.html` (`pluginUniqueId`, which the config page uses for its `ApiClient` calls) and `manifest.json` (`guid`). A mismatch between the first two breaks loading and saving configuration with no error on the server side
+- **A GUID change invalidates every previously published package**, because each zip embeds the old `Id` and `CreatePluginInstance` self-heals `meta.json` back to whatever the assembly says. Old versions were therefore removed from `manifest.json` rather than left under the new GUID, where installing one would silently reinstate the collision
+
 ### Shared Trakt Connection (Official Trakt Plugin Bridge)
 - **Why**: Trakt's free tier allows one connected community app per account, counted by distinct OAuth `client_id`. JellyNext and `jellyfin/jellyfin-plugin-trakt` are separate registered apps, so on a free account the second one to connect is rejected.
 - **`TraktAuthMode`** (in `PluginConfiguration`): `Standalone` (default, own client_id + own tokens), `SharedTraktPluginToken` (official client_id + borrow the official plugin's token), `SharedClientId` (official client_id + own token, experimental)
@@ -393,7 +403,12 @@ Implement `IContentProvider` + register in `PluginServiceRegistrator` → automa
 ### Jellyfin 10.11 API Changes
 - **UserDataManager**: Requires `User` entity (not `Guid`) - inject `IUserManager`, use `GetUserById(Guid)`
 - **Task Triggers**: Use `TaskTriggerInfoType` enum, not string constants (`IntervalTrigger`, `DailyTrigger`, etc.)
-- **Framework**: .NET 9.0 required
+- **Framework**: .NET 9.0 required (this API surface is unchanged on Jellyfin 12/.NET 10, which is what the project now builds against - see below)
+
+### Framework Targeting (Jellyfin 12 only as of v2.5.0.0)
+- **Single-targeted `net10.0`** (Jellyfin 12.x). From v2.2.0.0 through v2.4.0.0 the project was multi-targeted (`net9.0` for Jellyfin 10.11.x built alongside `net10.0` for 12.x, from the same source - the plugin API is unchanged between the two NuGet package majors, only the package reference version differs). v2.5.0.0 dropped `net9.0` from both the `.csproj` and the release pipeline (`build.yml`): only one zip is built, packaged and appended to `manifest.json` now, keyed to the single `JellyfinPackageVersion` property
+- **Jellyfin 10.11.x is not being dropped as a supported server, only as an automatically-updated one.** The plugin still runs there; a 10.11 server just no longer sees new versions through **Dashboard → Plugins → Catalog**, because `manifest.json` only ever gains `net10.0`/`targetAbi 12.0.0.0` entries from here on. Someone on 10.11.x installs the last `net9.0` release (`v2.4.0.0`) manually and stays on it, or upgrades to 12.x for the repository install to resume working
+- **A `net9.0` build can still be produced from source** by adding that target framework and the matching `Jellyfin.Controller`/`Jellyfin.Model` `10.11.0` package references back to the `.csproj` - nothing about the plugin's own code is net10.0-specific
 
 ### Startup Sync Pattern
 `StartupSyncService` (IHostedService) programmatically executes `ContentSyncScheduledTask` via `ITaskManager` - more reliable than `TriggerStartup` (only works on first registration)
