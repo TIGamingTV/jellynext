@@ -18,9 +18,7 @@
 
   <!-- Jellyfin's NuGet package version tracks its server version exactly - a floating "10.11.*"
        reference once resolved to a patch whose assembly version didn't match a 10.11.0/10.11.1
-       host and threw ReflectionTypeLoadException, so both are pinned to an exact release.
-       Bump JellyfinPackageVersionNet10 to "12.0.0" (dropping the "-rcN") once Jellyfin 12.0.0
-       stable ships, then remove this comment. -->
+       host and threw ReflectionTypeLoadException, so both are pinned to an exact release. -->
   <PropertyGroup>
     <JellyfinPackageVersionNet9>10.11.0</JellyfinPackageVersionNet9>
     <JellyfinPackageVersionNet10>12.0.0</JellyfinPackageVersionNet10>

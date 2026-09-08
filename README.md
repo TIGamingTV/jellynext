@@ -786,9 +786,8 @@ No tokens or secrets are needed — the built-in `GITHUB_TOKEN` covers all of it
 runs after the release because the checksum has to match the asset that was actually published, and
 it is idempotent, so re-running a release does not duplicate entries.
 
-Until Jellyfin 12.0.0 ships stable, `JellyfinPackageVersionNet10` in the `.csproj` is pinned to the
-latest release candidate (currently `12.0.0-rc7`) so the net10.0 build can be tested. Bump it to the
-final `12.0.0` once that's out.
+`JellyfinPackageVersionNet10` in the `.csproj` is pinned to `12.0.0`, matching the same
+pin-to-an-exact-release rule as `JellyfinPackageVersionNet9`.
 
 `manifest.json` ships with an empty `versions` array; it fills in from the first release onward.
 

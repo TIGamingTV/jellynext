@@ -9,8 +9,8 @@
     "imageUrl": "https://raw.githubusercontent.com/TIGamingTV/jellynext/main/images/jellynext_logo.png",
     "versions": [
       {
-        "version": "2.3.0.0",
-        "changelog": "Release v2.3.0.0",
+        "version": "2.3.0.1",
+        "changelog": "### Features\n\n- **Jellyfin 12.x build repinned to the stable 12.0.0 release** — `JellyfinPackageVersionNet10` now targets Jellyfin 12.0.0 stable instead of a release candidate, now that 12.0.0 has shipped. The upstream diff between the previously-pinned `12.0.0-rc7` and the final `12.0.0` tag was checked for anything touching the `MediaBrowser.Controller`/`MediaBrowser.Model` surface this plugin consumes; nothing relevant changed",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://github.com/TIGamingTV/jellynext/releases/download/v2.3.0.0/jellynext-v2.3.0.0-jf12.zip",
         "checksum": "f089da6fd086adbf9239e5d1c4b15459",
@@ -20,7 +20,7 @@
       },
       {
         "version": "2.3.0.0",
-        "changelog": "Release v2.3.0.0",
+        "changelog": "### Features\n\n- **Jellyfin 12.x build repinned to the stable 12.0.0 release** — `JellyfinPackageVersionNet10` now targets Jellyfin 12.0.0 stable instead of a release candidate, now that 12.0.0 has shipped. The upstream diff between the previously-pinned `12.0.0-rc7` and the final `12.0.0` tag was checked for anything touching the `MediaBrowser.Controller`/`MediaBrowser.Model` surface this plugin consumes; nothing relevant changed",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/TIGamingTV/jellynext/releases/download/v2.3.0.0/jellynext-v2.3.0.0.zip",
         "checksum": "b04d94d82828f55021fb65f95022b16c",

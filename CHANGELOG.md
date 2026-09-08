@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.3.0.0
+
+### Features
+
+- **Jellyfin 12.x build repinned to the stable 12.0.0 release** — `JellyfinPackageVersionNet10` now targets Jellyfin 12.0.0 stable instead of a release candidate, now that 12.0.0 has shipped. The upstream diff between the previously-pinned `12.0.0-rc7` and the final `12.0.0` tag was checked for anything touching the `MediaBrowser.Controller`/`MediaBrowser.Model` surface this plugin consumes; nothing relevant changed
+
 ## v2.2.0.0
 
 ### Features
