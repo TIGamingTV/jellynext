@@ -23,7 +23,7 @@
        stable ships, then remove this comment. -->
   <PropertyGroup>
     <JellyfinPackageVersionNet9>10.11.0</JellyfinPackageVersionNet9>
-    <JellyfinPackageVersionNet10>12.0.0-rc*</JellyfinPackageVersionNet10>
+    <JellyfinPackageVersionNet10>12.0.0</JellyfinPackageVersionNet10>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
