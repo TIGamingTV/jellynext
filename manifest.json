@@ -9,6 +9,26 @@
     "imageUrl": "https://raw.githubusercontent.com/TIGamingTV/jellynext/main/images/jellynext_logo.png",
     "versions": [
       {
+        "version": "2.3.0.1",
+        "changelog": "Release v2.3.0.0",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/jellynext/releases/download/v2.3.0.0/jellynext-v2.3.0.0-jf12.zip",
+        "checksum": "f089da6fd086adbf9239e5d1c4b15459",
+        "timestamp": "2026-09-08T06:48:34Z",
+        "repositoryName": "JellyNext",
+        "repositoryUrl": "https://github.com/TIGamingTV/jellynext"
+      },
+      {
+        "version": "2.3.0.0",
+        "changelog": "Release v2.3.0.0",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/TIGamingTV/jellynext/releases/download/v2.3.0.0/jellynext-v2.3.0.0.zip",
+        "checksum": "b04d94d82828f55021fb65f95022b16c",
+        "timestamp": "2026-09-08T06:48:34Z",
+        "repositoryName": "JellyNext",
+        "repositoryUrl": "https://github.com/TIGamingTV/jellynext"
+      },
+      {
         "version": "2.2.0.0",
         "changelog": "### Features\n\n- **Jellyfin 12.x support, alongside 10.11.x** — Jellyfin 12 runs on .NET 10 rather than .NET 9, which is otherwise the only change that matters here: the plugin API itself is unchanged, so the same source now builds two DLLs (`net9.0` for 10.11.x, `net10.0` for 12.x) rather than forking the codebase\n  - The release workflow packages and publishes both builds from one version bump, and `manifest.json` carries an entry for each `targetAbi` — a 10.11 server and a 12.x server each resolve to the build meant for them\n  - The `net10.0` build currently targets the `Jellyfin.Controller`/`Jellyfin.Model` 12.0.0 release candidate, since 12.0.0 hasn't shipped stable yet; it will be repinned to the final release the same way the plugin has always pinned to an exact Jellyfin version rather than a floating one",
         "targetAbi": "12.0.0.0",
