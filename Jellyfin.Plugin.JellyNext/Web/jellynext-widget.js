@@ -381,7 +381,7 @@
         section.appendChild(heading);
 
         var row = document.createElement('div');
-        row.className = 'itemsContainer scrollSlider focuscontainer-x padded-left padded-right jellynextRow';
+        row.className = 'scrollSlider focuscontainer-x padded-left padded-right jellynextRow';
         section.appendChild(row);
 
         return section;
