@@ -40,7 +40,7 @@ Most answers are in the Jellyfin log: **Dashboard → Logs**. JellyNext's log li
 
 **Authorization stays on "Waiting for authorization..."**
 - Enter the code at <https://trakt.tv/activate> while signed in to the Trakt account you want to link. Codes expire; press **Link Trakt Account** again for a new one.
-- On a free Trakt account that already has the official Trakt plugin connected, the second app is rejected. Use [the shared connection](usage.md#shared-trakt-connection-free-trakt-accounts).
+- On a free Trakt account that already has the official Trakt plugin connected, the second app is rejected. Use [the shared connection](../README.md#compatibility-with-the-official-trakt-plugin).
 
 **Syncs stop working after a while in shared-token mode**
 - With *Let JellyNext refresh the shared token* off, an expired token is only renewed when the official Trakt plugin makes a call. Turn the option on.

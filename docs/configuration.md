@@ -27,7 +27,7 @@ The sync schedule itself is not a plugin setting: change it in **Dashboard → S
 
 | Setting | Default | Description |
 |---|---|---|
-| Authorization Mode | Standalone | **Standalone** — JellyNext's own Trakt app and tokens. **Share the Trakt plugin's token** — uses the token the official Trakt plugin holds for the same Jellyfin user (recommended for free Trakt accounts running both plugins). **Own token, Trakt plugin's client ID** — experimental. See [Shared Trakt connection](usage.md#shared-trakt-connection-free-trakt-accounts). |
+| Authorization Mode | Standalone | **Standalone** — JellyNext's own Trakt app and tokens. **Share the Trakt plugin's token** — uses the token the official Trakt plugin holds for the same Jellyfin user (recommended for free Trakt accounts running both plugins). **Own token, Trakt plugin's client ID** — experimental. See [Compatibility with the official Trakt plugin](../README.md#compatibility-with-the-official-trakt-plugin). |
 | Let JellyNext refresh the shared token | on | Shared-token mode only. On: JellyNext refreshes an expired token and writes the new pair back into the Trakt plugin. Off: JellyNext skips syncs until the Trakt plugin refreshes it. |
 
 ### Per-user settings

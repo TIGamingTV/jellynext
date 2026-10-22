@@ -10,8 +10,7 @@ This guide explains how each feature behaves and how to use it. For the setting 
 - [New Seasons widget](#new-seasons-widget)
 - [Modular Home section](#modular-home-section)
 - [Marking JellyNext items](#marking-jellynext-items)
-- [Shared Trakt connection (free Trakt accounts)](#shared-trakt-connection-free-trakt-accounts)
-- [Using the official Trakt plugin alongside JellyNext](#using-the-official-trakt-plugin-alongside-jellynext)
+- [Official Trakt plugin and free Trakt accounts](#official-trakt-plugin-and-free-trakt-accounts)
 
 ## Virtual libraries
 
@@ -80,17 +79,7 @@ Playing an item requests it like any other JellyNext item.
 
 ## New season emails
 
-Emails a user when a new season of a show they watch is released.
-
-1. *Notifications* tab → fill in the SMTP settings, tick **Enable New Season Email Notifications**, **Save Configuration**.
-2. Enter a **Test Recipient** and press **Send Test Email** to confirm SMTP works.
-3. *Trakt* tab → select the user → make sure **Sync Next Seasons** is on → tick **Email Me About New Seasons**, enter the **Email Address** → **Save Configuration**.
-
-Behaviour:
-
-- Emails are sent at the end of each **Sync Trakt Content** run, at most one digest per user per run, listing show, season and premiere date.
-- A season is included when it appears in the user's Next Seasons list **and** was first aired within *Announce Seasons Released Within* (default 30 days). Catching up on an old show does not trigger emails.
-- Each season is announced once; the record survives restarts. If sending fails, nothing is recorded and the next sync retries.
+Setup and behaviour are described in the README: [New season email notifications](../README.md#new-season-email-notifications). For every SMTP setting see the [configuration reference](configuration.md#notifications).
 
 ## New Seasons widget
 
@@ -136,22 +125,6 @@ Behaviour:
 - **Tag**: a normal Jellyfin tag on every movie, show, season and episode in the JellyNext libraries — visible in every client, usable in search, filters and collections. It is applied when items are scanned, after every content sync and on every save. Disabling or renaming it removes the old tag.
 - **Badge / download icon**: web client only (same script as the widget), and only on tagged items. The icon and "Request" label are cosmetic: pressing them still plays the placeholder, which sends the request.
 
-## Shared Trakt connection (free Trakt accounts)
+## Official Trakt plugin and free Trakt accounts
 
-Trakt's free tier allows one connected app per account. JellyNext and the official Jellyfin Trakt plugin are different apps, so on a free account the second one to connect is rejected. Trakt VIP accounts are not affected.
-
-To share the official plugin's connection:
-
-1. Install the official Trakt plugin and link each user's Trakt account **there**.
-2. JellyNext *Trakt* tab → **Authorization Mode** → *Share the Trakt plugin's token* → **Save Configuration**.
-3. For each user: select them and press **Use the Trakt Plugin's Account**. No Trakt authorization happens; this only registers the user with JellyNext.
-
-Keep **Let JellyNext refresh the shared token** on (default). Trakt refresh tokens are single-use, so JellyNext writes the refreshed token back into the official plugin. If you turn it off, JellyNext skips syncs while the token is expired and waits for the official plugin, which only refreshes when it makes a call (scrobbling or its sync task, which has no default schedule).
-
-*Own token, Trakt plugin's client ID* is experimental: it is not verified that Trakt keeps both tokens valid. Prefer the shared-token mode.
-
-In both shared modes JellyNext never scrobbles or writes to your Trakt account, apart from the token refresh described above.
-
-## Using the official Trakt plugin alongside JellyNext
-
-In the official Trakt plugin's settings, exclude every JellyNext library for each user, so pressing Play on a placeholder is never scrobbled to Trakt. Your real libraries continue to sync normally.
+Excluding JellyNext's libraries in the official Trakt plugin, Trakt's one-app limit on free accounts, and the three authorization modes are described in the README: [Compatibility with the official Trakt plugin](../README.md#compatibility-with-the-official-trakt-plugin).
