@@ -17,7 +17,7 @@ Context store for Claude Code sessions. Contains critical architecture decisions
 
 ### Code Documentation Rules
 - **Do not over-document** - Only comment non-obvious logic, complex edge cases, and "why" decisions
-- **No separate docs per feature** - Keep centralized in README.md
+- **No separate docs per feature** - User docs are README.md (concise entry point) plus the topic guides in `docs/` (usage, configuration, webhooks, troubleshooting, development). Extend those rather than adding new files
 - Good code with clear naming > heavily commented code
 
 ---
@@ -26,7 +26,7 @@ Context store for Claude Code sessions. Contains critical architecture decisions
 
 Jellyfin plugin integrating Trakt-powered discovery with per-user virtual libraries and one-click Radarr/Sonarr downloads.
 
-**Tech Stack**: C# / .NET 9.0, Jellyfin Plugin SDK 10.11+, Trakt/TMDB/Radarr/Sonarr APIs
+**Tech Stack**: C# / .NET 10.0, Jellyfin 12.x (`Jellyfin.Controller`/`Jellyfin.Model` 12.0.0), Trakt/TMDB/Radarr/Sonarr APIs
 
 ## Architecture
 
@@ -60,7 +60,7 @@ Jellyfin.Plugin.JellyNext/
 - **Playback Interception**: Detects virtual item playback, triggers downloads via selected provider
 - **Watchlist Sync**: Automatically adds watchlisted movies/shows from Trakt to download systems (Radarr/Sonarr/Jellyseerr)
 - **OAuth**: Per-user Trakt tokens with auto-refresh (stored in `PluginConfiguration.TraktUsers[]`)
-- **Sync System**: `ContentSyncScheduledTask` + `WatchlistSyncScheduledTask` + `StartupSyncService` → cache → stub files → library scan
+- **Sync System**: `ContentSyncScheduledTask` + `WatchlistSyncScheduledTask` (content sync has a `StartupTrigger`) → cache → stub files → library scan
 
 ### Architectural Layers
 ```
@@ -148,7 +148,7 @@ Plugin Entry → API Controllers → Services → Providers → Virtual Library 
 
 **Content Sync**:
 ```
-StartupSyncService (5s delay) → ITaskManager.QueueScheduledTask<ContentSyncScheduledTask>
+ContentSyncScheduledTask (StartupTrigger + 6h IntervalTrigger)
   → ContentSyncService.SyncAllAsync()
     → For each user + provider:
       IContentProvider.FetchContentAsync(userId)
@@ -248,7 +248,7 @@ Use `Plugin.Instance?.Configuration` not `Plugin.Instance?.PluginConfiguration` 
 - **`TraktAuthenticationException`**: signals "skip this cycle", not "no content". `ContentSyncService` catches it and leaves the cache untouched - overwriting with an empty list would tear down the user's virtual library on a transient token problem. Rethrown past the generic `catch (Exception)` handlers in providers/`ShowsCacheService`/`WatchlistSyncService`.
 
 ### Configuration Page Architecture
-- **Modular tabs**: Each tab isolated in `Configuration/tabs/{name}.html` + `{name}.js` (general, trakt, trending, downloads, notifications, widget)
+- **Modular tabs**: Each tab isolated in `Configuration/tabs/{name}.html` + `{name}.js` (general, trakt, trending, downloads, notifications, widget, library)
 - **Dynamic loading**: Main page fetches tabs via `ConfigController` (`GET /JellyNext/Config/Tab/{name}` and `/js`) using `ApiClient.getUrl()`
 - **Eager loading**: All tabs loaded on pageshow, populated after users dropdown is ready (avoids race conditions)
 - **Load order critical**: Load tabs → Load config → Load users → Populate UI (ensures dropdowns ready before setting values)
@@ -403,15 +403,15 @@ Implement `IContentProvider` + register in `PluginServiceRegistrator` → automa
 ### Jellyfin 10.11 API Changes
 - **UserDataManager**: Requires `User` entity (not `Guid`) - inject `IUserManager`, use `GetUserById(Guid)`
 - **Task Triggers**: Use `TaskTriggerInfoType` enum, not string constants (`IntervalTrigger`, `DailyTrigger`, etc.)
-- **Framework**: .NET 9.0 required (this API surface is unchanged on Jellyfin 12/.NET 10, which is what the project now builds against - see below)
+- **Framework**: these APIs date from Jellyfin 10.11/.NET 9 and are unchanged on Jellyfin 12/.NET 10, which is what the project now builds against - see below
 
 ### Framework Targeting (Jellyfin 12 only as of v2.5.0.0)
 - **Single-targeted `net10.0`** (Jellyfin 12.x). From v2.2.0.0 through v2.4.0.0 the project was multi-targeted (`net9.0` for Jellyfin 10.11.x built alongside `net10.0` for 12.x, from the same source - the plugin API is unchanged between the two NuGet package majors, only the package reference version differs). v2.5.0.0 dropped `net9.0` from both the `.csproj` and the release pipeline (`build.yml`): only one zip is built, packaged and appended to `manifest.json` now, keyed to the single `JellyfinPackageVersion` property
-- **Jellyfin 10.11.x is not being dropped as a supported server, only as an automatically-updated one.** The plugin still runs there; a 10.11 server just no longer sees new versions through **Dashboard → Plugins → Catalog**, because `manifest.json` only ever gains `net10.0`/`targetAbi 12.0.0.0` entries from here on. Someone on 10.11.x installs the last `net9.0` release (`v2.4.0.0`) manually and stays on it, or upgrades to 12.x for the repository install to resume working
+- **Jellyfin 10.11.x is not being dropped as a supported server, only as an automatically-updated one.** The plugin still runs there; a 10.11 server just no longer sees new versions through **Dashboard → Plugins → Catalog**, because `manifest.json` only ever gains `net10.0`/`targetAbi 12.0.0.0` entries from here on. Someone on 10.11.x installs the last `net9.0` release (`jellynext-v2.3.0.0.zip` from v2.3.0.0 - v2.4.0.0 was never published) manually and stays on it, or upgrades to 12.x for the repository install to resume working
 - **A `net9.0` build can still be produced from source** by adding that target framework and the matching `Jellyfin.Controller`/`Jellyfin.Model` `10.11.0` package references back to the `.csproj` - nothing about the plugin's own code is net10.0-specific
 
 ### Startup Sync Pattern
-`StartupSyncService` (IHostedService) programmatically executes `ContentSyncScheduledTask` via `ITaskManager` - more reliable than `TriggerStartup` (only works on first registration)
+`ContentSyncScheduledTask.GetDefaultTriggers()` returns a `StartupTrigger` plus a 6-hour interval. (An earlier `StartupSyncService` hosted service was replaced by this.) Default triggers only apply when the task is first registered, so an admin who edited the task's triggers keeps their own schedule
 
 ### Virtual Library Stub Files
 - **Path structure**:

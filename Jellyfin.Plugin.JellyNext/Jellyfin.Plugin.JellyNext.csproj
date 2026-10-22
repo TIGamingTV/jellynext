@@ -4,7 +4,7 @@
     <!-- Jellyfin 12.x runs on .NET 10. The plugin previously also targeted net9.0 for Jellyfin
          10.11.x, but that build is no longer produced going forward - see the v2.5.0.0 CHANGELOG
          entry. A 10.11 server does not receive further updates through the plugin repository; the
-         last net9.0 build (v2.4.0.0) remains available on the Releases page for manual install. -->
+         last net9.0 build (v2.3.0.0) remains available on the Releases page for manual install. -->
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyVersion>2.6.0.0</AssemblyVersion>
     <FileVersion>2.6.0.0</FileVersion>

@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.6.0.0
+
+### Bug Fixes
+
+- **The web client could crash when navigating away from the home screen with the New Seasons widget enabled** (`TypeError: t.value.pause is not a function`). The widget's row carried a class Jellyfin reserves for its own home-screen sections, so Jellyfin tried to pause it like one. The row no longer uses that class
+
 ## v2.5.0.0
 
 ### Changes
@@ -9,8 +15,10 @@
   entries from this point on, so a 10.11 server will not see or offer further JellyNext updates
   through **Dashboard → Plugins → Catalog**
   - **If you're still on Jellyfin 10.11.x**, you can keep running JellyNext, but updates now require
-    manual installation: download `jellynext-v2.4.0.0.zip` (the last `net9.0` build) from
-    [Releases](../../releases/tag/v2.4.0.0) and follow [Manual Installation](README.md#manual-installation).
+    manual installation: download `jellynext-v2.3.0.0.zip` (the last `net9.0` build) from the
+    [v2.3.0.0 release](https://github.com/TIGamingTV/jellynext/releases/tag/v2.3.0.0) and follow
+    [Manual installation](README.md#manual-installation). *(Corrected: this note originally pointed to
+    v2.4.0.0, which was never published as a release.)*
     It will not receive further updates unless you repeat this for each future manual release, or
     upgrade the server to Jellyfin 12.x and switch to the repository install
   - The project itself is now single-targeted (`net10.0` only) rather than multi-targeted. The
