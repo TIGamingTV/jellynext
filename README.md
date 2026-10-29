@@ -1,3 +1,5 @@
+> **Unofficial personal project.** Not affiliated with Jellyfin and not security-audited. Use it at your own risk. The code was not reviewed by me.
+
 <div align="center">
   <img src="images/jellynext_logo_full.png" alt="JellyNext Logo" width="600"/>
 
