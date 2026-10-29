@@ -132,7 +132,15 @@ public class SonarrService
                 var existingSeason = existing.Seasons?.Find(s => s.SeasonNumber == seasonNumber);
                 if (existingSeason != null && existingSeason.Monitored)
                 {
-                    _logger.LogInformation("Season {SeasonNumber} of {Title} is already monitored", seasonNumber, title);
+                    // Still searched: a request for a monitored season is typically the second half of a
+                    // split season, and waiting for RSS can miss episodes released before it was asked for.
+                    _logger.LogInformation(
+                        "Season {SeasonNumber} of {Title} is already monitored, searching for missing episodes",
+                        seasonNumber,
+                        title);
+                    await httpClient.PostAsJsonAsync(
+                        "/api/v3/command",
+                        new { name = "SeasonSearch", seriesId = existing.Id, seasonNumber });
                     return existing;
                 }
 

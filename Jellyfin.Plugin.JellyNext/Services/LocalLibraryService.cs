@@ -208,12 +208,17 @@ public class LocalLibraryService
     /// <param name="tmdbId">The TMDB ID of the series, if known.</param>
     /// <param name="imdbId">The IMDB ID of the series, if known.</param>
     /// <param name="seasonNumber">The season number to check.</param>
-    /// <returns>True if the season exists locally, false otherwise.</returns>
+    /// <param name="fromEpisode">For a season that resumed after a mid-season break, the first episode of the part on offer.</param>
+    /// <returns>True if the season (or, with <paramref name="fromEpisode"/>, that part of it) exists locally, false otherwise.</returns>
     /// <remarks>
     /// Every ID is offered because a series matched by TMDB carries no TVDB ID: looking only for the
     /// latter made the show look absent, so a season the user already had was suggested again.
+    /// <para>
+    /// A resumed season is checked by episode: its first half is normally already on disk, so the
+    /// season itself always exists and a season-level check would hide the second half for good.
+    /// </para>
     /// </remarks>
-    public bool DoesSeasonExist(int? tvdbId, int? tmdbId, string? imdbId, int seasonNumber)
+    public bool DoesSeasonExist(int? tvdbId, int? tmdbId, string? imdbId, int seasonNumber, int? fromEpisode = null)
     {
         var series = FindSeriesByAnyProviderId(tvdbId, tmdbId, imdbId);
         if (series == null)
@@ -221,7 +226,34 @@ public class LocalLibraryService
             return false;
         }
 
+        if (fromEpisode.HasValue)
+        {
+            return DoesEpisodeExist(series, seasonNumber, fromEpisode.Value);
+        }
+
         var localSeasons = GetLocalSeasons(series);
         return localSeasons.Contains(seasonNumber);
+    }
+
+    /// <summary>
+    /// Checks whether an episode is on disk, counting multi-episode files that span it.
+    /// </summary>
+    private bool DoesEpisodeExist(Series series, int seasonNumber, int episodeNumber)
+    {
+        var episodes = _libraryManager.GetItemList(new InternalItemsQuery
+        {
+            AncestorIds = new[] { series.Id },
+            IncludeItemTypes = new[] { BaseItemKind.Episode },
+            ParentIndexNumber = seasonNumber,
+            IsVirtualItem = false,
+            Recursive = true
+        });
+
+        return episodes
+            .OfType<Episode>()
+            .Where(e => !e.Path?.Contains("jellynext-virtual", StringComparison.OrdinalIgnoreCase) ?? true)
+            .Any(e => e.IndexNumber.HasValue
+                && e.IndexNumber.Value <= episodeNumber
+                && (e.IndexNumberEnd ?? e.IndexNumber.Value) >= episodeNumber);
     }
 }

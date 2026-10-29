@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.7.0.0
+
+### Bug Fixes
+
+- **The second half of a split season was never offered or announced.** Shows that stop a season at a mid-season finale and air the rest months later under the same season number left watch progress on that season with no next season to point at, so Next Seasons, the widget and new season emails all stayed silent when the show returned. Even had it been noticed, the season was already in Jellyfin (the first half), measured from a premiere months old, and already recorded as announced
+  - Watch progress now keeps the last episode watched. When the episode after it aired at least four weeks later, the rest of the season is offered ("From episode 9"), checked against the library by episode rather than by season, and dated from its return for the release window and emails
+  - Announcements are recorded per part, so the return is emailed even though the premiere was
+  - Native Sonarr requests for a season that is already monitored now trigger a season search instead of doing nothing
+
 ## v2.6.0.0
 
 ### Bug Fixes

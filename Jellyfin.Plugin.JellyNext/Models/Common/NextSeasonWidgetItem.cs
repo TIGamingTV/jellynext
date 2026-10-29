@@ -55,10 +55,16 @@ public class NextSeasonWidgetItem
     public int? AiredEpisodes { get; set; }
 
     /// <summary>
-    /// Gets or sets the season's premiere date.
+    /// Gets or sets the season's premiere date, or its return date when it resumed after a break.
     /// </summary>
     [JsonPropertyName("firstAired")]
     public DateTime? FirstAired { get; set; }
+
+    /// <summary>
+    /// Gets or sets the first episode on offer when the season has come back from a mid-season break.
+    /// </summary>
+    [JsonPropertyName("resumesAtEpisode")]
+    public int? ResumesAtEpisode { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether the season is still part-way through airing.
