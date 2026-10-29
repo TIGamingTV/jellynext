@@ -120,6 +120,7 @@ JellyNext can email a user when a new season of a show they watch is released.
 How it behaves:
 
 - **What triggers an email**: a season that is in the user's Next Seasons list (next unwatched season, aired, not in Jellyfin) **and** first aired within the announcement window. Catching up on an old show — say, finishing season 2 of a show that ended years ago — does not send anything.
+- **Split seasons**: when a season stops at a mid-season finale and the rest airs later under the same season number, its return is announced as well ("Season 5, from episode 9"), dated from the day it came back. The premiere and the return are announced separately.
 - **One digest per sync**: everything found in a **Sync Trakt Content** run goes out in a single email listing show, season and premiere date, so emails arrive at most once per sync interval (default 6 hours).
 - **Announced once**: sent seasons are recorded in the plugin configuration, so restarts don't repeat them and a season airing over several months is not re-announced. Records are dropped after 400 days.
 - **Failures retry**: if sending fails, nothing is recorded and the same seasons are retried on the next sync.

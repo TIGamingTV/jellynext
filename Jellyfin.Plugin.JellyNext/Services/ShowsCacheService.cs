@@ -26,8 +26,12 @@ public class ShowsCacheService
     // Global cache: tvdbId -> ShowCacheEntry (shared metadata/seasons)
     private readonly ConcurrentDictionary<int, ShowCacheEntry> _showsCache;
 
-    // Per-user watch progress: userId -> (tvdbId -> highest watched season)
-    private readonly ConcurrentDictionary<Guid, ConcurrentDictionary<int, int>> _userWatchProgress;
+    // Per-user watch progress: userId -> (tvdbId -> highest watched season and episode)
+    private readonly ConcurrentDictionary<Guid, ConcurrentDictionary<int, WatchProgress>> _userWatchProgress;
+
+    // Episode air dates per (traktId, season), kept until the season's aired count changes. Aired
+    // episodes keep their dates, so a count that has not moved means nothing worth re-reading.
+    private readonly ConcurrentDictionary<(int TraktId, int Season), (int AiredEpisodes, TraktSeasonEpisode[] Episodes)> _seasonEpisodes = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ShowsCacheService"/> class.
@@ -39,15 +43,43 @@ public class ShowsCacheService
         _logger = logger;
         _traktApi = traktApi;
         _showsCache = new ConcurrentDictionary<int, ShowCacheEntry>();
-        _userWatchProgress = new ConcurrentDictionary<Guid, ConcurrentDictionary<int, int>>();
+        _userWatchProgress = new ConcurrentDictionary<Guid, ConcurrentDictionary<int, WatchProgress>>();
     }
 
     /// <summary>
     /// Gets or creates the watch progress dictionary for a specific user.
     /// </summary>
-    private ConcurrentDictionary<int, int> GetUserWatchProgress(Guid userId)
+    private ConcurrentDictionary<int, WatchProgress> GetUserWatchProgress(Guid userId)
     {
-        return _userWatchProgress.GetOrAdd(userId, _ => new ConcurrentDictionary<int, int>());
+        return _userWatchProgress.GetOrAdd(userId, _ => new ConcurrentDictionary<int, WatchProgress>());
+    }
+
+    /// <summary>
+    /// Gets the episodes of a season with their air dates.
+    /// </summary>
+    /// <param name="traktUser">The Trakt user configuration.</param>
+    /// <param name="traktId">The Trakt show ID.</param>
+    /// <param name="seasonNumber">The season number.</param>
+    /// <param name="airedEpisodes">The season's current aired episode count, which decides whether a cached list is still current.</param>
+    /// <returns>The season's episodes, or an empty list when Trakt could not supply them.</returns>
+    public async Task<IReadOnlyList<TraktSeasonEpisode>> GetSeasonEpisodesAsync(
+        TraktUser traktUser, int traktId, int seasonNumber, int airedEpisodes)
+    {
+        var key = (traktId, seasonNumber);
+        if (_seasonEpisodes.TryGetValue(key, out var cached) && cached.AiredEpisodes == airedEpisodes)
+        {
+            return cached.Episodes;
+        }
+
+        var episodes = await _traktApi.GetSeasonEpisodes(traktUser, traktId, seasonNumber);
+
+        // A failed read comes back empty; caching that would hide the season until its count moved.
+        if (episodes.Length > 0)
+        {
+            _seasonEpisodes[key] = (airedEpisodes, episodes);
+        }
+
+        return episodes;
     }
 
     /// <summary>
@@ -89,8 +121,9 @@ public class ShowsCacheService
 
             try
             {
-                var highestWatchedSeason = GetHighestWatchedSeason(watchedShow);
-                var knownSeason = userProgress.TryGetValue(tvdbId, out var known) ? known : (int?)null;
+                var progress = GetWatchProgress(watchedShow);
+                var highestWatchedSeason = progress?.Season;
+                var knownSeason = userProgress.TryGetValue(tvdbId, out var known) ? known.Season : (int?)null;
                 var progressMoved = highestWatchedSeason.HasValue && highestWatchedSeason != knownSeason;
                 var cached = GetCachedShow(tvdbId);
                 var stale = cached != null && DateTime.UtcNow - cached.CachedAt > SeasonMetadataMaxAge;
@@ -101,9 +134,9 @@ public class ShowsCacheService
                     seasonsFetched++;
                 }
 
-                if (highestWatchedSeason.HasValue)
+                if (progress != null)
                 {
-                    SetUserWatchProgress(traktUser.LinkedMbUserId, tvdbId, highestWatchedSeason.Value);
+                    SetUserWatchProgress(traktUser.LinkedMbUserId, tvdbId, progress);
                     if (progressMoved)
                     {
                         progressChanges++;
@@ -111,7 +144,7 @@ public class ShowsCacheService
                             "Watch progress for {Title}: {Previous} -> S{Current}",
                             watchedShow.Show.Title,
                             knownSeason.HasValue ? $"S{knownSeason.Value}" : "not tracked",
-                            highestWatchedSeason.Value);
+                            progress.Season);
                     }
                 }
             }
@@ -291,17 +324,17 @@ public class ShowsCacheService
     /// </summary>
     /// <param name="userId">The user ID.</param>
     /// <param name="tvdbId">The TVDB ID.</param>
-    /// <param name="highestWatchedSeason">The highest season watched.</param>
+    /// <param name="progress">The highest season watched, and the highest episode watched in it.</param>
     /// <remarks>
     /// The value replaces whatever was held rather than being merged with it. Progress now comes from
     /// Trakt's watched snapshot, so it is authoritative in both directions - keeping the higher of the
     /// two would pin a show to a season the user has since unmarked, and Next Seasons would keep asking
     /// for a season past it.
     /// </remarks>
-    public void SetUserWatchProgress(Guid userId, int tvdbId, int highestWatchedSeason)
+    public void SetUserWatchProgress(Guid userId, int tvdbId, WatchProgress progress)
     {
         var userProgress = GetUserWatchProgress(userId);
-        userProgress[tvdbId] = highestWatchedSeason;
+        userProgress[tvdbId] = progress;
     }
 
     /// <summary>
@@ -313,7 +346,7 @@ public class ShowsCacheService
     public int? GetUserHighestWatchedSeason(Guid userId, int tvdbId)
     {
         var userProgress = GetUserWatchProgress(userId);
-        return userProgress.TryGetValue(tvdbId, out var season) ? season : null;
+        return userProgress.TryGetValue(tvdbId, out var progress) ? progress.Season : null;
     }
 
     /// <summary>
@@ -391,19 +424,19 @@ public class ShowsCacheService
 
     /// <summary>
     /// Gets all cached shows that have watched progress for a specific user.
-    /// Returns tuples of (show, highestWatchedSeason).
+    /// Returns tuples of (show, progress).
     /// </summary>
     /// <param name="userId">The user ID.</param>
     /// <returns>Collection of shows with their watched progress for the user.</returns>
-    public IEnumerable<(ShowCacheEntry Show, int HighestWatchedSeason)> GetShowsWithWatchedProgress(Guid userId)
+    public IEnumerable<(ShowCacheEntry Show, WatchProgress Progress)> GetShowsWithWatchedProgress(Guid userId)
     {
         var userProgress = GetUserWatchProgress(userId);
-        foreach (var (tvdbId, highestSeason) in userProgress)
+        foreach (var (tvdbId, progress) in userProgress)
         {
             var show = GetCachedShow(tvdbId);
             if (show != null)
             {
-                yield return (show, highestSeason);
+                yield return (show, progress);
             }
         }
     }
@@ -421,18 +454,18 @@ public class ShowsCacheService
     }
 
     /// <summary>
-    /// Gets the highest watched season from a watched show.
+    /// Gets the highest watched season from a watched show, and the highest episode watched in it.
     /// </summary>
     /// <param name="watchedShow">The watched show data.</param>
-    /// <returns>The highest season number with watched episodes, or null if none.</returns>
-    private int? GetHighestWatchedSeason(TraktWatchedShow watchedShow)
+    /// <returns>The progress, or null if no regular season has a watched episode.</returns>
+    private static WatchProgress? GetWatchProgress(TraktWatchedShow watchedShow)
     {
-        var watchedSeasons = watchedShow.Seasons
-            .Where(s => s.Number > 0 && s.Episodes.Any())
-            .Select(s => s.Number)
-            .OrderByDescending(s => s)
-            .ToList();
+        var season = watchedShow.Seasons
+            .Where(s => s.Number > 0 && s.Episodes.Length > 0)
+            .MaxBy(s => s.Number);
 
-        return watchedSeasons.Any() ? watchedSeasons.First() : null;
+        return season == null
+            ? null
+            : new WatchProgress { Season = season.Number, Episode = season.Episodes.Max(e => e.Number) };
     }
 }

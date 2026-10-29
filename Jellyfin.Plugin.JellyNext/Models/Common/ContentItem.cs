@@ -63,9 +63,22 @@ public class ContentItem
     public int? AiredSeasonCount { get; set; }
 
     /// <summary>
-    /// Gets or sets the premiere date of <see cref="SeasonNumber"/>, if known.
+    /// Gets or sets the release date of what is being offered, if known: the premiere of
+    /// <see cref="SeasonNumber"/>, or the date it came back when <see cref="SeasonResumesAtEpisode"/> is set.
     /// </summary>
+    /// <remarks>
+    /// A resumed season carries its return date rather than its premiere so the new-release window,
+    /// the widget's ordering and the email announcement all treat the second half as the release it is.
+    /// Measured from the premiere, a season that broke for three months would already be outside every
+    /// window by the time it came back.
+    /// </remarks>
     public DateTime? SeasonFirstAired { get; set; }
+
+    /// <summary>
+    /// Gets or sets the first episode of the part being offered when <see cref="SeasonNumber"/> has come
+    /// back from a mid-season break; null when the whole season is offered.
+    /// </summary>
+    public int? SeasonResumesAtEpisode { get; set; }
 
     /// <summary>
     /// Gets or sets the total number of episodes <see cref="SeasonNumber"/> will have, if known.

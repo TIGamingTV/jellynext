@@ -156,6 +156,7 @@ public class NextSeasonsWidgetService
                     EpisodeCount = item.SeasonEpisodeCount,
                     AiredEpisodes = item.SeasonAiredEpisodes,
                     FirstAired = item.SeasonFirstAired,
+                    ResumesAtEpisode = item.SeasonResumesAtEpisode,
                     IsAiring = item.SeasonIsAiring,
                     ImagePath = images.ImagePath,
                     FallbackImagePath = images.FallbackImagePath,
@@ -234,7 +235,8 @@ public class NextSeasonsWidgetService
                 item.TvdbId,
                 item.TmdbId,
                 item.ImdbId,
-                item.SeasonNumber!.Value);
+                item.SeasonNumber!.Value,
+                item.SeasonResumesAtEpisode);
         }
         catch (Exception ex)
         {

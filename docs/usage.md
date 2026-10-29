@@ -30,6 +30,7 @@ JellyNext writes small placeholder video files into folders, one folder per user
 - The **Sync Trakt Content** task (at startup and every 6 hours) fetches from Trakt, rewrites the placeholders and scans every library whose folder is under `jellynext-virtual`. You do not need to scan these libraries yourself.
 - With **Ignore Collected Items** on (default), titles in the user's Trakt collection or already in Jellyfin are left out. Trakt's own filter is unreliable, so JellyNext also compares locally.
 - Next Seasons follows the user's Trakt watch progress: once season 2 is marked watched on Trakt, season 3 appears after the next sync (if it has aired and is not in Jellyfin).
+- Split seasons are covered too: if a season stops at a mid-season finale and the rest airs later under the same season number, the rest of that season appears (shown as "From episode N") once it returns, and counts as a new release from its return date. A break must be at least four weeks between two episodes; shorter gaps, such as holiday breaks, are ordinary weekly airing.
 - With **Only Newly Released Seasons**, Next Seasons is limited to seasons first aired within the **New Release Window**, turning it from a backlog list into a "just released" list. A season disappears once it is older than the window, even if it is still airing.
 
 **Permissions**: give each user access only to their own JellyNext libraries (**Dashboard → Users → user → Access**). The per-user folders are only meaningful for their owner.

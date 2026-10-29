@@ -138,14 +138,17 @@ public class NewSeasonNotificationService
     /// </summary>
     private List<ContentItem> GetUnannouncedSeasons(Guid userId, TraktUser traktUser, int windowDays)
     {
+        // Keyed on the part as well as the season, so the second half of a split season is not
+        // suppressed by the record of its premiere.
         var alreadyNotified = traktUser.NotifiedSeasons
-            .Select(n => (n.TvdbId, n.SeasonNumber))
+            .Select(n => (n.TvdbId, n.SeasonNumber, n.FromEpisode))
             .ToHashSet();
 
         return _contentCache.GetCachedContent(userId, "nextseasons")
             .Where(item => item.TvdbId.HasValue && item.SeasonNumber.HasValue)
             .Where(item => SeasonReleaseHelper.IsRecentlyReleased(item.SeasonFirstAired, windowDays))
-            .Where(item => !alreadyNotified.Contains((item.TvdbId!.Value, item.SeasonNumber!.Value)))
+            .Where(item => !alreadyNotified.Contains(
+                (item.TvdbId!.Value, item.SeasonNumber!.Value, item.SeasonResumesAtEpisode ?? 0)))
             .OrderByDescending(item => item.SeasonFirstAired ?? DateTime.MinValue)
             .ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -168,6 +171,7 @@ public class NewSeasonNotificationService
             {
                 TvdbId = item.TvdbId!.Value,
                 SeasonNumber = item.SeasonNumber!.Value,
+                FromEpisode = item.SeasonResumesAtEpisode ?? 0,
                 NotifiedAt = DateTime.UtcNow
             }));
 
@@ -185,12 +189,28 @@ public class NewSeasonNotificationService
         if (seasons.Count == 1)
         {
             var item = seasons[0];
-            return string.Create(
-                CultureInfo.InvariantCulture,
-                $"New season available: {item.Title} - Season {item.SeasonNumber}");
+            return item.SeasonResumesAtEpisode.HasValue
+                ? $"New episodes available: {item.Title} - {FormatSeason(item)}"
+                : $"New season available: {item.Title} - {FormatSeason(item)}";
         }
 
-        return string.Create(CultureInfo.InvariantCulture, $"{seasons.Count} new seasons available");
+        return seasons.Any(item => item.SeasonResumesAtEpisode.HasValue)
+            ? string.Create(CultureInfo.InvariantCulture, $"{seasons.Count} new seasons and episodes available")
+            : string.Create(CultureInfo.InvariantCulture, $"{seasons.Count} new seasons available");
+    }
+
+    private static string BuildIntro(IReadOnlyList<ContentItem> seasons)
+    {
+        if (seasons.Count == 1)
+        {
+            return seasons[0].SeasonResumesAtEpisode.HasValue
+                ? "A show you watch is back from its mid-season break:"
+                : "A new season of a show you watch has been released:";
+        }
+
+        return seasons.Any(item => item.SeasonResumesAtEpisode.HasValue)
+            ? "New seasons and episodes of shows you watch have been released:"
+            : "New seasons of shows you watch have been released:";
     }
 
     private static string BuildTextBody(IReadOnlyList<ContentItem> seasons, string? userName)
@@ -199,9 +219,7 @@ public class NewSeasonNotificationService
         {
             string.IsNullOrEmpty(userName) ? "Hi," : $"Hi {userName},",
             string.Empty,
-            seasons.Count == 1
-                ? "A new season of a show you watch has been released:"
-                : "New seasons of shows you watch have been released:",
+            BuildIntro(seasons),
             string.Empty
         };
 
@@ -218,13 +236,11 @@ public class NewSeasonNotificationService
         var rows = string.Concat(seasons.Select(item => string.Create(
             CultureInfo.InvariantCulture,
             $"<li style=\"margin-bottom:8px;\"><strong>{WebUtility.HtmlEncode(item.Title)}</strong>"
-            + $"{WebUtility.HtmlEncode(FormatYear(item))} &ndash; Season {item.SeasonNumber}"
+            + $"{WebUtility.HtmlEncode(FormatYear(item))} &ndash; {WebUtility.HtmlEncode(FormatSeason(item))}"
             + $"<br /><span style=\"color:#888;font-size:13px;\">{WebUtility.HtmlEncode(FormatRelease(item))}</span></li>")));
 
         var greeting = string.IsNullOrEmpty(userName) ? "Hi," : $"Hi {WebUtility.HtmlEncode(userName)},";
-        var intro = seasons.Count == 1
-            ? "A new season of a show you watch has been released:"
-            : "New seasons of shows you watch have been released:";
+        var intro = BuildIntro(seasons);
 
         return "<html><body style=\"font-family:Helvetica,Arial,sans-serif;font-size:15px;color:#222;\">"
                + $"<p>{greeting}</p>"
@@ -239,7 +255,14 @@ public class NewSeasonNotificationService
     {
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"{item.Title}{FormatYear(item)} - Season {item.SeasonNumber} ({FormatRelease(item)})");
+            $"{item.Title}{FormatYear(item)} - {FormatSeason(item)} ({FormatRelease(item)})");
+    }
+
+    private static string FormatSeason(ContentItem item)
+    {
+        return item.SeasonResumesAtEpisode.HasValue
+            ? string.Create(CultureInfo.InvariantCulture, $"Season {item.SeasonNumber}, from episode {item.SeasonResumesAtEpisode}")
+            : string.Create(CultureInfo.InvariantCulture, $"Season {item.SeasonNumber}");
     }
 
     private static string FormatYear(ContentItem item)
@@ -256,7 +279,8 @@ public class NewSeasonNotificationService
             return item.SeasonIsAiring ? "currently airing" : "release date unknown";
         }
 
-        var premiered = "premiered " + item.SeasonFirstAired.Value.ToString("d MMMM yyyy", CultureInfo.InvariantCulture);
+        var premiered = (item.SeasonResumesAtEpisode.HasValue ? "returned " : "premiered ")
+            + item.SeasonFirstAired.Value.ToString("d MMMM yyyy", CultureInfo.InvariantCulture);
         return item.SeasonIsAiring ? premiered + ", still airing" : premiered;
     }
 }

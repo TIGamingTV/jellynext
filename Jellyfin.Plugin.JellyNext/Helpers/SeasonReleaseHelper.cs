@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Jellyfin.Plugin.JellyNext.Models.Common;
+using Jellyfin.Plugin.JellyNext.Models.Trakt;
 
 namespace Jellyfin.Plugin.JellyNext.Helpers;
 
@@ -13,6 +16,45 @@ namespace Jellyfin.Plugin.JellyNext.Helpers;
 /// </remarks>
 public static class SeasonReleaseHelper
 {
+    // The shortest gap between two consecutive episodes that counts as a mid-season break. Weekly
+    // shows routinely skip a week or two around holidays; a split season is off air for months. Four
+    // weeks separates the two without needing per-show knowledge.
+    private static readonly TimeSpan MidSeasonBreak = TimeSpan.FromDays(28);
+
+    /// <summary>
+    /// Finds the part of a season that came back from a mid-season break after the user's last episode.
+    /// </summary>
+    /// <param name="episodes">The season's episodes with their air dates.</param>
+    /// <param name="lastWatchedEpisode">The highest episode of the season the user has watched.</param>
+    /// <returns>The first episode of the resumed part and the date it aired, or null when there is none.</returns>
+    /// <remarks>
+    /// A part only counts when the user stopped right at the break - the episode after their last one
+    /// aired at least <see cref="MidSeasonBreak"/> later. Without that, a weekly episode the user simply
+    /// has not watched yet would read as a new release every week, and so would every episode of a
+    /// show they dropped half-way through.
+    /// </remarks>
+    public static (int FromEpisode, DateTime Released)? FindResumedPart(
+        IReadOnlyList<TraktSeasonEpisode> episodes, int lastWatchedEpisode)
+    {
+        var now = DateTime.UtcNow;
+        var aired = episodes
+            .Where(e => e.FirstAired.HasValue && ToUtc(e.FirstAired.Value) <= now)
+            .OrderBy(e => e.Number)
+            .ToList();
+
+        var last = aired.LastOrDefault(e => e.Number <= lastWatchedEpisode);
+        var next = aired.FirstOrDefault(e => e.Number > lastWatchedEpisode);
+        if (last == null || next == null)
+        {
+            return null;
+        }
+
+        var resumed = ToUtc(next.FirstAired!.Value);
+        return resumed - ToUtc(last.FirstAired!.Value) >= MidSeasonBreak
+            ? (next.Number, resumed)
+            : null;
+    }
+
     /// <summary>
     /// Determines whether a season is currently airing.
     /// </summary>
@@ -49,11 +91,13 @@ public static class SeasonReleaseHelper
             return false;
         }
 
-        var value = firstAired.Value;
-        var released = value.Kind == DateTimeKind.Unspecified
+        return ToUtc(firstAired.Value) >= DateTime.UtcNow.AddDays(-Math.Clamp(windowDays, 1, 3650));
+    }
+
+    private static DateTime ToUtc(DateTime value)
+    {
+        return value.Kind == DateTimeKind.Unspecified
             ? DateTime.SpecifyKind(value, DateTimeKind.Utc)
             : value.ToUniversalTime();
-
-        return released >= DateTime.UtcNow.AddDays(-Math.Clamp(windowDays, 1, 3650));
     }
 }

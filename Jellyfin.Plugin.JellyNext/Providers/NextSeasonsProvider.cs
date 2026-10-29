@@ -94,11 +94,11 @@ public class NextSeasonsProvider : IContentProvider
             var skipReasons = new Dictionary<string, int>();
             var hiddenExamples = new List<string>();
 
-            foreach (var (show, highestWatchedSeason) in watchedShowsList)
+            foreach (var (show, progress) in watchedShowsList)
             {
                 try
                 {
-                    var (contentItem, skipReason) = await ProcessWatchedShowAsync(show, highestWatchedSeason, traktUser, hiddenExamples);
+                    var (contentItem, skipReason) = await ProcessWatchedShowAsync(show, progress, traktUser, hiddenExamples);
                     if (contentItem != null)
                     {
                         contentItems.Add(contentItem);
@@ -167,7 +167,7 @@ public class NextSeasonsProvider : IContentProvider
     /// </summary>
     private async Task<(ContentItem? Item, string? SkipReason)> ProcessWatchedShowAsync(
         ShowCacheEntry cachedShow,
-        int highestWatchedSeason,
+        WatchProgress progress,
         TraktUser traktUser,
         List<string> hiddenExamples)
     {
@@ -177,19 +177,23 @@ public class NextSeasonsProvider : IContentProvider
         }
 
         var tvdbId = cachedShow.TvdbId.Value;
+        var highestWatchedSeason = progress.Season;
         var nextSeasonNumber = highestWatchedSeason + 1;
 
         _logger.LogDebug(
-            "Checking next season for {Title} (TVDB: {TvdbId}): highest watched S{Watched}, checking S{Next}",
+            "Checking next season for {Title} (TVDB: {TvdbId}): highest watched S{Watched}E{Episode}, checking S{Next}",
             cachedShow.Title,
             tvdbId,
             highestWatchedSeason,
+            progress.Episode,
             nextSeasonNumber);
 
         // Check cache for next season
         var cachedSeason = _showsCache.GetCachedSeason(tvdbId, nextSeasonNumber);
 
-        // If not in cache and show is not ended, fetch fresh data
+        // An ongoing show's incomplete seasons are deliberately not cached, so the latest season data -
+        // for the next season and for the one the user is in - has to come from Trakt.
+        TraktSeason[]? traktSeasons = null;
         if (cachedSeason == null && !cachedShow.IsEnded)
         {
             _logger.LogDebug(
@@ -197,20 +201,24 @@ public class NextSeasonsProvider : IContentProvider
                 nextSeasonNumber,
                 cachedShow.Title);
 
-            // Fetch latest seasons from Trakt
-            var traktSeasons = await _traktApi.GetShowSeasons(traktUser, cachedShow.TraktId);
+            traktSeasons = await _traktApi.GetShowSeasons(traktUser, cachedShow.TraktId);
+        }
+
+        // The rest of the season the user is in comes before the next one: a split season that returned
+        // from its mid-season break is what they are actually missing.
+        var resumed = await TryGetResumedSeasonAsync(cachedShow, progress, traktSeasons, traktUser, hiddenExamples);
+        if (resumed != null)
+        {
+            return (resumed, null);
+        }
+
+        if (traktSeasons != null)
+        {
             var nextTraktSeason = traktSeasons.FirstOrDefault(s => s.Number == nextSeasonNumber);
 
             if (nextTraktSeason != null && nextTraktSeason.AiredEpisodes > 0)
             {
-                cachedSeason = new SeasonMetadata
-                {
-                    SeasonNumber = nextTraktSeason.Number,
-                    EpisodeCount = nextTraktSeason.EpisodeCount,
-                    AiredEpisodes = nextTraktSeason.AiredEpisodes,
-                    FirstAired = nextTraktSeason.FirstAired,
-                    CachedAt = DateTime.UtcNow
-                };
+                cachedSeason = ToSeasonMetadata(nextTraktSeason);
             }
             else
             {
@@ -268,24 +276,110 @@ public class NextSeasonsProvider : IContentProvider
             cachedShow.Title,
             tvdbId);
 
-        return (
-            new ContentItem
-            {
-                Type = ContentType.Show,
-                Title = cachedShow.Title,
-                Year = cachedShow.Year,
-                TmdbId = cachedShow.TmdbId,
-                ImdbId = cachedShow.ImdbId,
-                TvdbId = cachedShow.TvdbId,
-                TraktId = cachedShow.TraktId,
-                ProviderName = ProviderName,
-                SeasonNumber = nextSeasonNumber,
-                SeasonFirstAired = cachedSeason.FirstAired,
-                SeasonEpisodeCount = cachedSeason.EpisodeCount,
-                SeasonAiredEpisodes = cachedSeason.AiredEpisodes,
-                SeasonIsAiring = SeasonReleaseHelper.IsAiring(cachedShow, cachedSeason),
-                Genres = cachedShow.Genres
-            },
-            null);
+        return (CreateContentItem(cachedShow, cachedSeason, cachedSeason.FirstAired, null), null);
+    }
+
+    /// <summary>
+    /// Offers the rest of the season the user is in, when it has come back from a mid-season break.
+    /// </summary>
+    /// <remarks>
+    /// Some shows stop a season at a mid-season finale and air the second half months later under the
+    /// same season number. Progress then stays on that season and there is no next season to point at,
+    /// so without this the return of the show was never noticed. The part's own return date stands in
+    /// for the premiere, which is what makes the new-release window and the email treat it as new.
+    /// </remarks>
+    private async Task<ContentItem?> TryGetResumedSeasonAsync(
+        ShowCacheEntry cachedShow,
+        WatchProgress progress,
+        TraktSeason[]? traktSeasons,
+        TraktUser traktUser,
+        List<string> hiddenExamples)
+    {
+        var freshSeason = traktSeasons?.FirstOrDefault(s => s.Number == progress.Season);
+        var season = freshSeason != null
+            ? ToSeasonMetadata(freshSeason)
+            : _showsCache.GetCachedSeason(cachedShow.TvdbId!.Value, progress.Season);
+
+        // Nothing has aired past the user's last episode. This also keeps the per-season episode lookup
+        // off the path for every show the user is caught up on.
+        if (season == null || season.AiredEpisodes <= progress.Episode)
+        {
+            return null;
+        }
+
+        var episodes = await _showsCache.GetSeasonEpisodesAsync(
+            traktUser, cachedShow.TraktId, progress.Season, season.AiredEpisodes);
+        var part = SeasonReleaseHelper.FindResumedPart(episodes, progress.Episode);
+        if (part == null)
+        {
+            return null;
+        }
+
+        var (fromEpisode, released) = part.Value;
+
+        if (traktUser.NextSeasonsRecentOnly
+            && !SeasonReleaseHelper.IsRecentlyReleased(released, traktUser.NextSeasonsRecentDays))
+        {
+            hiddenExamples.Add(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{cachedShow.Title} S{progress.Season} from E{fromEpisode} (returned {released:yyyy-MM-dd})"));
+            return null;
+        }
+
+        if (_localLibraryService.DoesSeasonExist(
+                cachedShow.TvdbId, cachedShow.TmdbId, cachedShow.ImdbId, progress.Season, fromEpisode))
+        {
+            _logger.LogDebug(
+                "Resumed season S{Season} from E{Episode} already exists locally for {Title}",
+                progress.Season,
+                fromEpisode,
+                cachedShow.Title);
+            return null;
+        }
+
+        _logger.LogInformation(
+            "Recommending resumed season S{Season} from E{Episode} for {Title} (TVDB: {TvdbId}), back since {Released:yyyy-MM-dd}",
+            progress.Season,
+            fromEpisode,
+            cachedShow.Title,
+            cachedShow.TvdbId,
+            released);
+
+        return CreateContentItem(cachedShow, season, released, fromEpisode);
+    }
+
+    private ContentItem CreateContentItem(
+        ShowCacheEntry show, SeasonMetadata season, DateTime? released, int? resumesAtEpisode)
+    {
+        return new ContentItem
+        {
+            Type = ContentType.Show,
+            Title = show.Title,
+            Year = show.Year,
+            TmdbId = show.TmdbId,
+            ImdbId = show.ImdbId,
+            TvdbId = show.TvdbId,
+            TraktId = show.TraktId,
+            ProviderName = ProviderName,
+            SeasonNumber = season.SeasonNumber,
+            SeasonFirstAired = released,
+            SeasonResumesAtEpisode = resumesAtEpisode,
+            SeasonEpisodeCount = season.EpisodeCount,
+            SeasonAiredEpisodes = season.AiredEpisodes,
+            SeasonIsAiring = SeasonReleaseHelper.IsAiring(show, season),
+            Genres = show.Genres
+        };
+    }
+
+    private static SeasonMetadata ToSeasonMetadata(TraktSeason season)
+    {
+        return new SeasonMetadata
+        {
+            SeasonNumber = season.Number,
+            EpisodeCount = season.EpisodeCount,
+            AiredEpisodes = season.AiredEpisodes,
+            FirstAired = season.FirstAired,
+            CachedAt = DateTime.UtcNow
+        };
     }
 }

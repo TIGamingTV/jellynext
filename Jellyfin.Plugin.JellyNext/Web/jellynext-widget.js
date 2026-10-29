@@ -198,6 +198,13 @@
             parts.push(String(item.year));
         }
 
+        // A season back from a mid-season break: the episode count would describe the whole season,
+        // most of which the user has already seen.
+        if (item.resumesAtEpisode) {
+            parts.push('From episode ' + item.resumesAtEpisode);
+            return parts.join(' · ');
+        }
+
         var episodes = episodeText(item);
         if (episodes) {
             parts.push(episodes);

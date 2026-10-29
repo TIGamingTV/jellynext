@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -688,6 +689,43 @@ public class TraktApi
         }
 
         return seasons ?? Array.Empty<TraktSeason>();
+    }
+
+    /// <summary>
+    /// Gets the episodes of one season, with their air dates.
+    /// </summary>
+    /// <param name="traktUser">The Trakt user configuration.</param>
+    /// <param name="traktId">The Trakt show ID.</param>
+    /// <param name="seasonNumber">The season number.</param>
+    /// <returns>The season's episodes, or an empty array on failure.</returns>
+    public async Task<TraktSeasonEpisode[]> GetSeasonEpisodes(TraktUser traktUser, int traktId, int seasonNumber)
+    {
+        using var httpClient = await CreateTraktClient(traktUser);
+        var response = await httpClient.GetAsync(
+            string.Create(CultureInfo.InvariantCulture, $"/shows/{traktId}/seasons/{seasonNumber}?extended=full"));
+
+        if (!response.IsSuccessStatusCode)
+        {
+            ThrowIfUnauthorized(response, "season episodes");
+
+            _logger.LogWarning(
+                "Failed to get episodes of season {Season} for Trakt ID {TraktId}: Status={Status}",
+                seasonNumber,
+                traktId,
+                response.StatusCode);
+            return Array.Empty<TraktSeasonEpisode>();
+        }
+
+        try
+        {
+            return await response.Content.ReadFromJsonAsync<TraktSeasonEpisode[]>(_jsonOptions)
+                ?? Array.Empty<TraktSeasonEpisode>();
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Failed to deserialize episodes of season {Season} for Trakt ID {TraktId}", seasonNumber, traktId);
+            return Array.Empty<TraktSeasonEpisode>();
+        }
     }
 
     /// <summary>

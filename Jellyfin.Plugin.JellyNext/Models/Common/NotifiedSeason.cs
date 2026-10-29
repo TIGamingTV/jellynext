@@ -23,6 +23,16 @@ public class NotifiedSeason
     public int SeasonNumber { get; set; }
 
     /// <summary>
+    /// Gets or sets the first episode of the announced part, or 0 when the whole season was announced.
+    /// </summary>
+    /// <remarks>
+    /// Without it the second half of a split season shares its key with the premiere, so the record of
+    /// the first announcement would silently suppress the second. 0 is also what entries written before
+    /// this existed deserialize to, which is what they announced.
+    /// </remarks>
+    public int FromEpisode { get; set; }
+
+    /// <summary>
     /// Gets or sets the timestamp the notification was sent at.
     /// </summary>
     public DateTime NotifiedAt { get; set; }
